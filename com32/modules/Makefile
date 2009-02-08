@@ -37,11 +37,18 @@ dmitest.elf : dmitest.o dmi_utils.o dmi.o $(LIBS) $(C_LIBS)
 ethersel.elf : ethersel.o $(LIBS) $(C_LIBS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
+resume.elf: resume_restore.o resume_parser.o resume_debug.o resume_trampoline.o resume_bitops.o resume_bitmaps.o resume.o $(LIBS) $(C_LIBS)
+	$(LD) $(LDFLAGS) -o $@ $^
+
+resume-test:
+	$(CC) -funit-at-a-time -g resume.c resume_restore.c resume_parser.c resume_debug.c resume_bitops.c resume_dyn_pageflags.c -o resume -DDYN_PAGEFLAGS -DDEBUG -DTESTING -Wall
+
 tidy dist:
 	rm -f *.o *.lo *.a *.lst *.elf .*.d *.tmp
 
 clean: tidy
 	rm -f *.lnx
+	rm -f resume
 
 spotless: clean
 	rm -f *.lss *.c32 *.com
