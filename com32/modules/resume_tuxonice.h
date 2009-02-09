@@ -68,7 +68,6 @@ static char *tuxonice_signature = "\xed\xc3\x02\xe9\x98\x56\xe5\x0c";
  *
  * This is not the pristine one from TuxOnIce. The fields:
  *	+ devinfo_sz
- *	+ extents_num
  *	+ nodes_num
  *	+ zones_num
  * have been added.
@@ -81,7 +80,6 @@ struct toi_file_header {
 	unsigned long header_offset;		/* Offset to the extents */
 	unsigned long first_header_block;	/* Unused */
 	int have_image;				/* Unused */
-	int extents_num;			/* Needed to compute offsets */
 	int nodes_num;				/* MAX_NUMNODES */
 	int zones_num;				/* MAX_NR_ZONES */
 };

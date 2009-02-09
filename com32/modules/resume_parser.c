@@ -21,6 +21,13 @@
 #include "resume_bitmaps.h"
 #include "resume_parser.h"
 
+/**
+ * toi_load_extent_chain - load a chain of extents
+ * @chain:	Chain to populate.
+ *
+ * Read the extent chain back from disk. This is not needed as we have
+ * filesystem drivers.
+ **/
 static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
 {
 	struct hibernate_extent *this, *last = NULL;
@@ -100,7 +107,6 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 		 *	int devinfo_sz;
 		 *	unsigned long first_header_block;
 		 *	int have_image;
-		 *	int extents_num;
 		 *	int nodes_num;
 		 *	int zones_num;
 		 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
@@ -123,11 +129,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 		dump_toi_file_header(toi_file_header);
 
-		/*
-		 * Get extents info
-		 *
-		 * Note: pageset 2 is saved BEFORE pageset 1!
-		 */
+		/* Get extents info */
 		toi_image_buffer_posn = PAGE_SIZE;
 
 		memcpy(&toi_writer_posn_save,
@@ -146,33 +148,28 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 		/* Load chains */
 		// XXX This assumes only one chain (one device).
-		//FIXME (easy fix)
+		// FIXME (easy fix)
 		READ_BUFFER(chain, struct hibernate_extent_chain*);
 		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
 
-		/* Needed? */
-		toi_load_extent_chain(chain);
-		dump_block_chains(chain);
+		/* This is not needed */
+		//toi_load_extent_chain(chain);
+		//dump_block_chains(chain);
 
 		/*
 		 * The header is located after:
 		 *	+ the toi_file_header
-		 *	+ the devinfo struct (we pass it in the image as we don't
-		 *	  want to compute its size here - too many complex
+		 *	+ the devinfo struct (we pass it in the image as we
+		 *	  don't want to compute its size here - too many complex
 		 *	  dependencies)
 		 *	+ the chain of extents
-		 *
-		 * In theory, if we get to the hibernate_extent_chain struct,
-		 * we can access the number of extents. But this is tricky as
-		 * we don't have the size of devinfo. This is why we pass it in
-		 * the image as well.
 		 */
 		header_offset = PAGE_SIZE +
 			sizeof(struct toi_file_header) -
 			sizeof(unsigned long) +
 			toi_file_header->devinfo_sz +
 			sizeof(struct hibernate_extent_chain) +
-			2 * sizeof(unsigned long) * toi_file_header->extents_num;
+			2 * sizeof(unsigned long) * chain->num_extents;
 		toi_image_buffer_posn = header_offset;
 	}
 

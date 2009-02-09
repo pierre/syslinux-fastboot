@@ -31,7 +31,6 @@ void dump_toi_file_header(struct toi_file_header* toi_file_header)
 	printf("\tfirst_header_block\t%lu\n",
 		toi_file_header->first_header_block);
 	printf("\thave_image\t\t%d\n", toi_file_header->have_image);
-	printf("\textents_num\t\t%d\n", toi_file_header->extents_num);
 	printf("\tnodes_num\t\t%d\n", toi_file_header->nodes_num);
 	printf("\tzones_num\t\t%d\n", toi_file_header->zones_num);
 
