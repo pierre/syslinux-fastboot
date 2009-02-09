@@ -27,7 +27,7 @@ void dump_toi_file_header(struct toi_file_header* toi_file_header)
 	printf("File header:\n");
 	printf("\tresumed_before\t\t%d\n", toi_file_header->resumed_before);
 	printf("\tdevinfo_sz\t\t%d\n", toi_file_header->devinfo_sz);
-	printf("\theader_offset\t\t%d\n", toi_file_header->header_offset);
+	printf("\theader_offset\t\t%lu\n", toi_file_header->header_offset);
 	printf("\tfirst_header_block\t%lu\n",
 		toi_file_header->first_header_block);
 	printf("\thave_image\t\t%d\n", toi_file_header->have_image);
@@ -96,7 +96,6 @@ void dump_toi_module_header(struct toi_module_header * toi_module_header)
 void dump_pagemap()
 {
 	int node_id, zone_nr = 0;
-	unsigned int i = 0;
 	unsigned long ****bitmap = pagemap.bitmap;
 
 	printf(" --- Dump bitmap ---\n");
@@ -131,6 +130,7 @@ void dump_pagemap()
 				&bitmap[node_id][zone_nr][1],
 				*bitmap[node_id][zone_nr][1]);
 #ifdef METADATA_DEBUG
+			unsigned int i = 0;
 			for (i = 2; i < (unsigned long) *bitmap[node_id]
 					[zone_nr][1] + 2; i++)
 				if (bitmap[node_id][zone_nr][i])

@@ -14,16 +14,14 @@
 #ifndef _RESUME_RESTORE_H
 #define _RESUME_RESTORE_H
 
-static void skip_pagedir2(long);
+struct data_buffers_list {
+	unsigned long pfn;
+	addr_t* data;
+	struct data_buffers_list *next, *prev;
+};
 
 int load_memory_map(unsigned long, long, long);
 
 int memory_map_add(unsigned long, unsigned long, addr_t*, int*, int*, int*, int*);
-
-struct data_buffers_list {
-	addr_t pfn;
-	addr_t* data;
-	struct data_buffers_list *next, *prev;
-};
 
 #endif /* _RESUME_RESTORE_H */

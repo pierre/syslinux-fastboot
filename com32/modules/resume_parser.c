@@ -21,6 +21,33 @@
 #include "resume_bitmaps.h"
 #include "resume_parser.h"
 
+static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
+{
+	struct hibernate_extent *this, *last = NULL;
+	int i;
+
+	for (i = 0; i < chain->num_extents; i++) {
+		this = malloc(sizeof(struct hibernate_extent));
+		if (!this) {
+			printf("Failed to allocate a new extent.\n");
+			return -1;
+		}
+		this->next = NULL;
+
+		memcpy(this, toi_image_buffer + toi_image_buffer_posn,
+			2 * sizeof(unsigned long));
+		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(unsigned long));
+
+		if (last)
+			last->next = this;
+		else
+			chain->first = this;
+		last = this;
+	}
+
+	return 0;
+}
+
 /**
  * read_metadata - read configuration and bitmaps from disk
  * @pagedir1_size:	Size of pagedir1 (found in the header).
@@ -120,7 +147,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 		/* Load chains */
 		// XXX This assumes only one chain (one device).
 		//FIXME (easy fix)
-		READ_BUFFER(chain, char*);
+		READ_BUFFER(chain, struct hibernate_extent_chain*);
 		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
 
 		/* Needed? */
@@ -195,31 +222,4 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 bail:
 	return -1;
-}
-
-static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
-{
-	struct hibernate_extent *this, *last = NULL;
-	int i;
-
-	for (i = 0; i < chain->num_extents; i++) {
-		this = malloc(sizeof(struct hibernate_extent));
-		if (!this) {
-			printf("Failed to allocate a new extent.\n");
-			return -1;
-		}
-		this->next = NULL;
-
-		memcpy(this, toi_image_buffer + toi_image_buffer_posn,
-			2 * sizeof(unsigned long));
-		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(unsigned long));
-
-		if (last)
-			last->next = this;
-		else
-			chain->first = this;
-		last = this;
-	}
-
-	return 0;
 }

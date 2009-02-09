@@ -25,6 +25,126 @@
 #include "resume_debug.h"
 #include "resume_restore.h"
 
+static void add_entry_list(struct data_buffers_list* list,
+			   struct data_buffers_list* cur,
+			   addr_t* data_buffer, unsigned long pfn, int first)
+{
+	struct data_buffers_list* new_element = malloc(sizeof(struct data_buffers_list));
+
+	/* Create new element */
+	new_element->data = malloc(PAGE_SIZE);
+	new_element->next = NULL;
+	new_element->pfn = pfn;
+	memmove(new_element->data, data_buffer, PAGE_SIZE);
+
+	/* First element in a range? */
+	if (first) {
+		new_element->prev = NULL;
+		list = new_element;
+		cur = list;
+	} else {
+		new_element->prev = list;
+		cur->next = new_element;
+		cur = new_element;
+	}
+
+	dprintf("\tAdded restore entry: prev = 0x%p, next = 0x%p,"
+		"data = 0x%p\n",
+		 cur->prev,
+		 cur->next,
+		 cur->data);
+}
+
+static void extract_data_from_list(struct data_buffers_list* cur,
+				   addr_t* shuffling_load_addr)
+{
+	int i = 0;
+
+	while (cur != NULL) {
+		if (cur->next) {
+			cur = cur->next;
+			memmove(shuffling_load_addr + i, cur->prev->data, PAGE_SIZE);
+
+			dprintf("PFN %lu: staged data from 0x%p at "
+				"0x%p\n",
+				cur->prev->pfn,
+				cur->prev->data,
+				shuffling_load_addr + i);
+
+			/* Free the previous element */
+			free(cur->prev->data);
+			free(cur->prev);
+
+			i += PAGE_SIZE;
+		} else { /* Last element in the list */
+			memmove(shuffling_load_addr + i, cur->data, PAGE_SIZE);
+
+			dprintf("PFN %lu: staged data from %p at %p\n",
+				cur->pfn,
+				cur->data,
+				shuffling_load_addr + i);
+
+			/* Free the last element */
+			free(cur->data);
+			free(cur);
+
+			return;
+		}
+	}
+}
+
+/**
+ * skip_pagedir2 - move the image pointer after pagedir2
+ * @pagedir2_size:	number of pfns in pagedir2
+ *
+ * pagedir2 is saved first in the image - and reloaded last by TuxOnIce.
+ * We don't care about this data - so we just skip it.
+ *
+ * Side Effects:
+ *	toi_image_buffer_posn is moved.
+ *	dest_pfn is changed.
+ **/
+static void skip_pagedir2(long pagedir2_size)
+{
+	/* Number of pfns found */
+	long pfns_found = 0;
+	unsigned long* dest_pfn = NULL;
+	unsigned long* data_buffer_size;
+
+	/* pagedir2 is PAGE_SIZE aligned */
+	do {
+		MOVE_TO_NEXT_PAGE
+		READ_BUFFER(dest_pfn, unsigned long*);
+	} while (!*dest_pfn);
+	goto read_buf_size_pagedir2;
+
+	while (pfns_found <= pagedir2_size) {
+		READ_BUFFER(dest_pfn, unsigned long*);
+
+read_buf_size_pagedir2:
+		/* Read the size of the data */
+		data_buffer_size = (unsigned long*) (toi_image_buffer +
+						     toi_image_buffer_posn +
+						     sizeof(unsigned long));
+		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
+			toi_image_buffer_posn += 1;
+			/* This is not a bug */
+			continue;
+		} else {
+			pfns_found++;
+			/*
+			 * This is noisy: ~15K pfn.
+			 * But useful in development: add the same printk
+			 * in toi_bio_write_page() and check both outputs.
+			 */
+			dprintf("%lu [%lu]\n",
+				 *dest_pfn,
+				 *data_buffer_size);
+			toi_image_buffer_posn += *data_buffer_size +
+						 2 * sizeof(unsigned long);
+		}
+	}
+}
 /**
  * load_memory_map - iterate through the bitmaps to setup SYSLINUX memory map
  * @data_len:	Size of the file.
@@ -68,11 +188,13 @@ int load_memory_map(unsigned long data_len,
 	 * and store it in a linked list of data_buffers_list (its size will
 	 * be the number of pfns in the range.
 	 *
-	 * I would love to override my own memory in order save space but the fact that
-	 * data_buffer may be compressed (maximum size is PAGE_SIZE) makes things difficult.
+	 * I would love to override my own memory in order save space but the
+	 * fact that data_buffer may be compressed (maximum size is PAGE_SIZE)
+	 * makes things difficult.
 	 *
-	 * Note that we assume that pfns are stored in order. If this is not true, this function adds
-	 * overhead, instead of optimizing the restore code path.
+	 * Note that we assume that pfns are stored in order. If this is not
+	 * true, this function adds overhead, instead of optimizing the
+	 * restore code path.
 	 */
 	struct data_buffers_list* data_buffers_list = NULL;
 	struct data_buffers_list* data_buffers_list_cur = NULL;
@@ -96,15 +218,13 @@ int load_memory_map(unsigned long data_len,
 	 * code path from the saved kernel.
 	 */
 	skip_pagedir2(pagedir2_size);
-	DUMP_PNTR
-	return 1;
+
 	/* Read all pages back */
 	while (toi_image_buffer_posn < data_len && *pfn_read < 9900) {
 read_dest_pfn:
 		READ_BUFFER(dest_pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 
-read_buf_size:
 		//if (!*prev_dest_pfn)
 		//	*start_range_pfn = *dest_pfn;
 
@@ -148,7 +268,7 @@ read_buf_size:
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 
 		(*pfn_read)++;
-		dprintf("%lu [%lu] (%d) = %lu\n",
+		dprintf("%lu [%lu] (%lu) = %lu\n",
 			 toi_image_buffer_posn - 2 * sizeof(unsigned long),
 			 *data_buffer_size,
 			 *pfn_read,
@@ -188,12 +308,13 @@ read_buf_size:
 			 * and restart to read_dest_pfn.
 			 */
 save_range:
-			dprintf("PFNs restore range %u..%u found.\n",
+			dprintf("PFNs restore range %lu..%lu found.\n",
 				*start_range_pfn, *prev_dest_pfn);
 
 			/* Create a big chunk of data for later shuffling and free the list of data */
 			addr_t* shuffling_load_addr = malloc((*prev_dest_pfn - *start_range_pfn + 1) * PAGE_SIZE);
-			extract_data_from_list(data_buffers_list, shuffling_load_addr);
+			extract_data_from_list(data_buffers_list,
+					       shuffling_load_addr);
 
 #ifndef TESTING
 			/* XXX Check it is absolute pfns and not zone offsets */
@@ -218,7 +339,7 @@ save_range:
 	 * Sanity check: have we read all data?
 	 */
 	if (*pfn_read != pagedir1_size) {
-		dprintf("BUG: pfn_read=%u but total_pfn=%d\n",
+		dprintf("BUG: pfn_read=%lu but pagedir1_size=%lu\n",
 				*pfn_read,
 				pagedir1_size);
 		goto bail; // XXX Is it really a bug?
@@ -394,120 +515,4 @@ bail:
 	syslinux_free_movelist(ml);
 #endif /* !TESTING */
 	return -1;
-}
-
-void add_entry_list(struct data_buffers_list* list, struct data_buffers_list* cur, addr_t* data_buffer, unsigned long pfn, int first)
-{
-	struct data_buffers_list* new_element = malloc(sizeof(struct data_buffers_list));
-
-	/* Create new element */
-	new_element->data = malloc(PAGE_SIZE);
-	new_element->next = NULL;
-	new_element->pfn = pfn;
-	memmove(new_element->data, data_buffer, PAGE_SIZE);
-
-	/* First element in a range? */
-	if (first) {
-		new_element->prev = NULL;
-		list = new_element;
-		cur = list;
-	} else {
-		new_element->prev = list;
-		cur->next = new_element;
-		cur = new_element;
-	}
-
-	dprintf("\tAdded restore entry: prev = 0x%08lu, next = 0x%08lu, data = 0x%08lu\n",
-		 cur->prev,
-		 cur->next,
-		 cur->data);
-}
-
-void extract_data_from_list(struct data_buffers_list* cur, addr_t* shuffling_load_addr)
-{
-	int i = 0;
-
-	while (cur != NULL) {
-		if (cur->next) {
-			cur = cur->next;
-			memmove(shuffling_load_addr + i, cur->prev->data, PAGE_SIZE);
-
-			dprintf("PFN %d: staged data from 0x%08lu at 0x%08lu\n",
-				cur->prev->pfn,
-				cur->prev->data,
-				shuffling_load_addr + i);
-
-			/* Free the previous element */
-			free(cur->prev->data);
-			free(cur->prev);
-
-			i += PAGE_SIZE;
-		} else { /* Last element in the list */
-			memmove(shuffling_load_addr + i, cur->data, PAGE_SIZE);
-
-			dprintf("PFN %d: staged data from %08u at %08u\n",
-				cur->pfn,
-				cur->data,
-				shuffling_load_addr + i);
-
-			/* Free the last element */
-			free(cur->data);
-			free(cur);
-
-			return;
-		}
-	}
-}
-
-/**
- * skip_pagedir2 - move the image pointer after pagedir2
- * @pagedir2_size:	number of pfns in pagedir2
- *
- * pagedir2 is saved first in the image - and reloaded last by TuxOnIce.
- * We don't care about this data - so we just skip it.
- *
- * Side Effects:
- *	toi_image_buffer_posn is moved.
- *	dest_pfn is changed.
- **/
-static void skip_pagedir2(long pagedir2_size)
-{
-	/* Number of pfns found */
-	long pfns_found = 0;
-	unsigned long* dest_pfn = NULL;
-	unsigned long* data_buffer_size;
-
-	/* pagedir2 is PAGE_SIZE aligned */
-	do {
-		MOVE_TO_NEXT_PAGE
-		READ_BUFFER(dest_pfn, unsigned long*);
-	} while (!*dest_pfn);
-	goto read_buf_size_pagedir2;
-
-	while (pfns_found <= pagedir2_size) {
-		READ_BUFFER(dest_pfn, unsigned long*);
-
-read_buf_size_pagedir2:
-		/* Read the size of the data */
-		data_buffer_size = (unsigned long*) (toi_image_buffer +
-						     toi_image_buffer_posn +
-						     sizeof(unsigned long));
-		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
-			toi_image_buffer_posn += 1;
-			/* This is not a bug */
-			continue;
-		} else {
-			pfns_found++;
-			/*
-			 * This is noisy: ~15K pfn.
-			 * But useful in development: add the same printk
-			 * in toi_bio_write_page() and check both outputs.
-			 */
-			//dprintf("%lu [%lu]\n",
-			//	 *dest_pfn,
-			//	 *data_buffer_size);
-			toi_image_buffer_posn += *data_buffer_size +
-						 2 * sizeof(unsigned long);
-		}
-	}
 }

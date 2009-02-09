@@ -14,7 +14,6 @@
 #ifndef _RESUME_PARSER_H
 #define _RESUME_PARSER_H
 
-static int toi_load_extent_chain(struct hibernate_extent_chain*);
 int read_metadata(long*, long*);
 
 #endif /* _RESUME_PARSER_H */
