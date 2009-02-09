@@ -219,36 +219,35 @@ int load_memory_map(unsigned long data_len,
 	 */
 	skip_pagedir2(pagedir2_size);
 
+	/* pagedir1 is PAGE_SIZE aligned */
+	do {
+		MOVE_TO_NEXT_PAGE
+		READ_BUFFER(dest_pfn, unsigned long*);
+	} while (!*dest_pfn);
+	goto read_buf_size_pagedir1;
+
 	/* Read all pages back */
-	while (toi_image_buffer_posn < data_len && *pfn_read < 9900) {
+	while (toi_image_buffer_posn < data_len && *pfn_read <= pagedir1_size) {
 read_dest_pfn:
 		READ_BUFFER(dest_pfn, unsigned long*);
-		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 
 		//if (!*prev_dest_pfn)
 		//	*start_range_pfn = *dest_pfn;
 
+read_buf_size_pagedir1:
 		/* Read the size of the data */
 		READ_BUFFER(data_buffer_size, unsigned long*);
 
-		/*
-		 * Valid data?
-		 *
-		 * A good indicator to check if what we are currently reading
-		 * valid is the buffer size. It must be less or equal to
-		 * PAGE_SIZE.
-		 *
-		 * This is also used to jump from pagedir2 to pagedir1.
-		 */
-		if (!*dest_pfn || *data_buffer_size > PAGE_SIZE
-			       || *data_buffer_size <= 0)
+		/* Read the size of the data */
+		data_buffer_size = (unsigned long*) (toi_image_buffer +
+						     toi_image_buffer_posn +
+						     sizeof(unsigned long));
+		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
+			toi_image_buffer_posn += 1;
+			/* This is not a bug */
 			continue;
-
-		if (*dest_pfn > 800059) {
-			toi_image_buffer_posn -= sizeof(unsigned long);
-			DUMP_PNTR
-			break;
 		}
+
 		/*
 		 * The buffer size seem valid. Let's check the pfn in the bitmap
 		 * to be sure.
@@ -265,15 +264,14 @@ read_dest_pfn:
 		//		continue;
 
 		/* Ok, it IS valid */
-		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-
 		(*pfn_read)++;
-		dprintf("%lu [%lu] (%lu) = %lu\n",
-			 toi_image_buffer_posn - 2 * sizeof(unsigned long),
-			 *data_buffer_size,
-			 *pfn_read,
-			 *dest_pfn);
+		//dprintf("%lu [%lu]\n",
+		//	 *dest_pfn,
+		//	 *data_buffer_size);
+		toi_image_buffer_posn += *data_buffer_size +
+					 2 * sizeof(unsigned long);
 
+		continue; // XXX
 		/* Read the data */
 		READ_BUFFER(data_load_addr, addr_t*);
 		MOVE_FORWARD_BUFFER_POINTER(*data_buffer_size);
