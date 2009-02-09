@@ -69,10 +69,12 @@ __inline__ void error(const char *msg)
  **/
 static void boot_image(int len)
 {
-	int nb_of_pfns;
+	long pagedir1_size, pagedir2_size;
 
-	read_metadata(&nb_of_pfns);
-	load_memory_map(len, nb_of_pfns); /* Will return in protected mode */
+	read_metadata(&pagedir1_size, &pagedir2_size);
+
+	/* Will return in protected mode */
+	load_memory_map(len, pagedir1_size, pagedir2_size);
 }
 
 /**

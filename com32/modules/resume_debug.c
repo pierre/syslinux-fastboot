@@ -93,7 +93,7 @@ void dump_toi_module_header(struct toi_module_header * toi_module_header)
 #endif /* METADATA_DEBUG */
 }
 
-void dump_pagemap(int light)
+void dump_pagemap()
 {
 	int node_id, zone_nr = 0;
 	unsigned int i = 0;
@@ -130,15 +130,15 @@ void dump_pagemap(int light)
 			printf("%p:     Number of pages = 0x%08lx\n",
 				&bitmap[node_id][zone_nr][1],
 				*bitmap[node_id][zone_nr][1]);
-			if (!light) {
-				for (i = 2; i < (unsigned long) *bitmap[node_id]
-						[zone_nr][1] + 2; i++)
-					if (bitmap[node_id][zone_nr][i])
-						printf("%p:     Page %2d         = %p\n",
-							&bitmap[node_id][zone_nr][i],
-							i - 2,
-							bitmap[node_id][zone_nr][i]);
-			}
+#ifdef METADATA_DEBUG
+			for (i = 2; i < (unsigned long) *bitmap[node_id]
+					[zone_nr][1] + 2; i++)
+				if (bitmap[node_id][zone_nr][i])
+					printf("%p:     Page %2d         = %p\n",
+						&bitmap[node_id][zone_nr][i],
+						i - 2,
+						bitmap[node_id][zone_nr][i]);
+#endif
 		}
 	}
 out:

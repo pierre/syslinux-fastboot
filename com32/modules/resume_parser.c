@@ -23,7 +23,8 @@
 
 /**
  * read_metadata - read configuration and bitmaps from disk
- * @nb_of_pfns:	Size of pagedir (found in the header)
+ * @pagedir1_size:	Size of pagedir1 (found in the header).
+ * @pagedir2_size:	Size of pagedir2 (found in the header).
  *
  * Side effects:
  *	mm is populated
@@ -31,7 +32,7 @@
  * Return:
  *	0 if everything went well, -1 otherwise.
  **/
-int read_metadata(int* nb_of_pfns)
+int read_metadata(long* pagedir1_size, long* pagedir2_size)
 {
 	struct toi_header* toi_header;
 	struct hibernate_extent_iterate_saved_state toi_writer_posn_save[4];
@@ -122,6 +123,7 @@ int read_metadata(int* nb_of_pfns)
 		READ_BUFFER(chain, char*);
 		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
 
+		/* Needed? */
 		toi_load_extent_chain(chain);
 		dump_block_chains(chain);
 
@@ -151,7 +153,8 @@ int read_metadata(int* nb_of_pfns)
 	READ_BUFFER(toi_header, struct toi_header*);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_header));
 	dump_toi_header(toi_header);
-	*nb_of_pfns = toi_header->pagedir.size;
+	*pagedir1_size = toi_header->pagedir.size;
+	*pagedir2_size = toi_header->pageset_2_size;
 
 	MOVE_FORWARD_BUFFER_POINTER(4); /* FIXME: where does that come from? */
 
@@ -176,8 +179,8 @@ int read_metadata(int* nb_of_pfns)
 	}
 
 	/* Load the bitmap from disk */
-	//load_bitmap();
-	//dump_pagemap(LIGHT);
+	load_bitmap();
+	dump_pagemap();
 
 	/*
 	 * The following performs some sanity checks.

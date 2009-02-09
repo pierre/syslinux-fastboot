@@ -14,7 +14,9 @@
 #ifndef _RESUME_RESTORE_H
 #define _RESUME_RESTORE_H
 
-int load_memory_map(unsigned long, unsigned long);
+static void skip_pagedir2(long);
+
+int load_memory_map(unsigned long, long, long);
 
 int memory_map_add(unsigned long, unsigned long, addr_t*, int*, int*, int*, int*);
 

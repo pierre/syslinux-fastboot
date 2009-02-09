@@ -34,12 +34,14 @@
  * the memory and setup protected mode. The execute will jump to the trampoline
  * to restore registers and page tables.
  **/
-int load_memory_map(unsigned long data_len, unsigned long nb_of_pfns)
+int load_memory_map(unsigned long data_len,
+		    long pagedir1_size,
+		    long pagedir2_size)
 {
 	addr_t* data_buffer = malloc(PAGE_SIZE);
 	addr_t* data_load_addr = NULL;
 
-	addr_t* data_buffer_size = NULL;
+	unsigned long* data_buffer_size = NULL;
 	unsigned long* dest_pfn = NULL;
 
 	unsigned long* pfn_read = malloc(sizeof(unsigned long));
@@ -89,22 +91,51 @@ int load_memory_map(unsigned long data_len, unsigned long nb_of_pfns)
 		goto bail;
 #endif /* !TESTING */
 
-	do {
-		MOVE_TO_NEXT_PAGE
-		READ_BUFFER(dest_pfn, unsigned long*);
-		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-	} while (!*dest_pfn);
-	goto read_buf_size;
-
+	/*
+	 * Restoring program caches is handled via TuxOnIce, in the resume
+	 * code path from the saved kernel.
+	 */
+	skip_pagedir2(pagedir2_size);
+	DUMP_PNTR
+	return 1;
 	/* Read all pages back */
-	while (toi_image_buffer_posn < data_len && *pfn_read < nb_of_pfns) {
+	while (toi_image_buffer_posn < data_len && *pfn_read < 9900) {
 read_dest_pfn:
 		READ_BUFFER(dest_pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 
 read_buf_size:
-		///* XXX IMPROVE ME Test if the pfn is valid and Unset me! */
-		////if (bitmap_unset(*dest_pfn))
+		//if (!*prev_dest_pfn)
+		//	*start_range_pfn = *dest_pfn;
+
+		/* Read the size of the data */
+		READ_BUFFER(data_buffer_size, unsigned long*);
+
+		/*
+		 * Valid data?
+		 *
+		 * A good indicator to check if what we are currently reading
+		 * valid is the buffer size. It must be less or equal to
+		 * PAGE_SIZE.
+		 *
+		 * This is also used to jump from pagedir2 to pagedir1.
+		 */
+		if (!*dest_pfn || *data_buffer_size > PAGE_SIZE
+			       || *data_buffer_size <= 0)
+			continue;
+
+		if (*dest_pfn > 800059) {
+			toi_image_buffer_posn -= sizeof(unsigned long);
+			DUMP_PNTR
+			break;
+		}
+		/*
+		 * The buffer size seem valid. Let's check the pfn in the bitmap
+		 * to be sure.
+		 *
+		 * XXX IMPROVE ME: Test if the pfn is valid and unset me! This
+		 * is to avoid fetching twice the same pfn (shouldn't happen).
+		 */
 		//if (!bitmap_test_all(*dest_pfn))
 		//	//if (*prev_dest_pfn) {
 		//	//	printf("PFN %lu not valid. Saving previous range and starting over.\n", dest_pfn);
@@ -113,22 +144,18 @@ read_buf_size:
 		//	//else
 		//		continue;
 
-		//if (!*prev_dest_pfn)
-		//	*start_range_pfn = *dest_pfn;
+		/* Ok, it IS valid */
+		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 
-		/* Read the size of the data */
-		READ_BUFFER(data_buffer_size, unsigned long*);
-
-		/* Valid data? */
-		if (!*dest_pfn || *data_buffer_size > PAGE_SIZE
-			       || *data_buffer_size < 0)
-			continue;
-
-		//dprintf("Valid pfn: %d\n", *dest_pfn);
 		(*pfn_read)++;
+		dprintf("%lu [%lu] (%d) = %lu\n",
+			 toi_image_buffer_posn - 2 * sizeof(unsigned long),
+			 *data_buffer_size,
+			 *pfn_read,
+			 *dest_pfn);
 
 		/* Read the data */
-		READ_BUFFER(data_load_addr, unsigned long*);
+		READ_BUFFER(data_load_addr, addr_t*);
 		MOVE_FORWARD_BUFFER_POINTER(*data_buffer_size);
 
 		/* Compressed data? */
@@ -142,9 +169,7 @@ read_buf_size:
 		/*
 		 * At that point, data_buffer points to a page of data. It has
 		 * been decompressed if needed.
-		 * Hence we know it is valid data: we can go to the next page.
 		 */
-		MOVE_FORWARD_BUFFER_POINTER(*data_buffer_size);
 		continue; //XXX
 
 		/* We bring back to memory continuous chunks of pfns */
@@ -192,10 +217,10 @@ save_range:
 	/*
 	 * Sanity check: have we read all data?
 	 */
-	if (*pfn_read != nb_of_pfns) {
+	if (*pfn_read != pagedir1_size) {
 		dprintf("BUG: pfn_read=%u but total_pfn=%d\n",
 				*pfn_read,
-				nb_of_pfns);
+				pagedir1_size);
 		goto bail; // XXX Is it really a bug?
 	}
 
@@ -430,6 +455,59 @@ void extract_data_from_list(struct data_buffers_list* cur, addr_t* shuffling_loa
 			free(cur);
 
 			return;
+		}
+	}
+}
+
+/**
+ * skip_pagedir2 - move the image pointer after pagedir2
+ * @pagedir2_size:	number of pfns in pagedir2
+ *
+ * pagedir2 is saved first in the image - and reloaded last by TuxOnIce.
+ * We don't care about this data - so we just skip it.
+ *
+ * Side Effects:
+ *	toi_image_buffer_posn is moved.
+ *	dest_pfn is changed.
+ **/
+static void skip_pagedir2(long pagedir2_size)
+{
+	/* Number of pfns found */
+	long pfns_found = 0;
+	unsigned long* dest_pfn = NULL;
+	unsigned long* data_buffer_size;
+
+	/* pagedir2 is PAGE_SIZE aligned */
+	do {
+		MOVE_TO_NEXT_PAGE
+		READ_BUFFER(dest_pfn, unsigned long*);
+	} while (!*dest_pfn);
+	goto read_buf_size_pagedir2;
+
+	while (pfns_found <= pagedir2_size) {
+		READ_BUFFER(dest_pfn, unsigned long*);
+
+read_buf_size_pagedir2:
+		/* Read the size of the data */
+		data_buffer_size = (unsigned long*) (toi_image_buffer +
+						     toi_image_buffer_posn +
+						     sizeof(unsigned long));
+		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
+			toi_image_buffer_posn += 1;
+			/* This is not a bug */
+			continue;
+		} else {
+			pfns_found++;
+			/*
+			 * This is noisy: ~15K pfn.
+			 * But useful in development: add the same printk
+			 * in toi_bio_write_page() and check both outputs.
+			 */
+			//dprintf("%lu [%lu]\n",
+			//	 *dest_pfn,
+			//	 *data_buffer_size);
+			toi_image_buffer_posn += *data_buffer_size +
+						 2 * sizeof(unsigned long);
 		}
 	}
 }

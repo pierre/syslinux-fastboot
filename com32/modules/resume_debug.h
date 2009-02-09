@@ -26,7 +26,7 @@
 void dump_toi_file_header(struct toi_file_header*);
 void dump_toi_header(struct toi_header*);
 void dump_toi_module_header(struct toi_module_header*);
-void dump_pagemap(int);
+void dump_pagemap();
 #else /* DEBUG */
 # define dprintf(f, ...) ((void)0)
 #endif /* !DEBUG */
