@@ -137,9 +137,11 @@ read_buf_size_pagedir2:
 			 * But useful in development: add the same printk
 			 * in toi_bio_write_page() and check both outputs.
 			 */
+#ifdef METADATA_DEBUG
 			dprintf("%lu [%lu]\n",
 				 *dest_pfn,
 				 *data_buffer_size);
+#endif
 			toi_image_buffer_posn += *data_buffer_size +
 						 2 * sizeof(unsigned long);
 		}
@@ -227,7 +229,7 @@ int load_memory_map(unsigned long data_len,
 	goto read_buf_size_pagedir1;
 
 	/* Read all pages back */
-	while (toi_image_buffer_posn < data_len && *pfn_read <= pagedir1_size) {
+	while (toi_image_buffer_posn < data_len && *pfn_read < pagedir1_size) {
 read_dest_pfn:
 		READ_BUFFER(dest_pfn, unsigned long*);
 
@@ -265,9 +267,11 @@ read_buf_size_pagedir1:
 
 		/* Ok, it IS valid */
 		(*pfn_read)++;
-		//dprintf("%lu [%lu]\n",
-		//	 *dest_pfn,
-		//	 *data_buffer_size);
+#ifdef METADATA_DEBUG
+		dprintf("%lu [%lu]\n",
+			 *dest_pfn,
+			 *data_buffer_size);
+#endif
 		toi_image_buffer_posn += *data_buffer_size +
 					 2 * sizeof(unsigned long);
 
@@ -309,8 +313,13 @@ save_range:
 			dprintf("PFNs restore range %lu..%lu found.\n",
 				*start_range_pfn, *prev_dest_pfn);
 
-			/* Create a big chunk of data for later shuffling and free the list of data */
-			addr_t* shuffling_load_addr = malloc((*prev_dest_pfn - *start_range_pfn + 1) * PAGE_SIZE);
+			/*
+			 * Create a big chunk of data for later shuffling and
+			 * free the list of data
+			 */
+			addr_t* shuffling_load_addr = malloc((*prev_dest_pfn -
+							*start_range_pfn + 1) *
+							 PAGE_SIZE);
 			extract_data_from_list(data_buffers_list,
 					       shuffling_load_addr);
 
@@ -340,7 +349,8 @@ save_range:
 		dprintf("BUG: pfn_read=%lu but pagedir1_size=%lu\n",
 				*pfn_read,
 				pagedir1_size);
-		goto bail; // XXX Is it really a bug?
+		/* This is really bad - cannot resume */
+		goto bail;
 	}
 
 #ifndef TESTING

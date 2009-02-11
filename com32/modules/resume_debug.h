@@ -27,6 +27,7 @@ void dump_toi_file_header(struct toi_file_header*);
 void dump_toi_header(struct toi_header*);
 void dump_toi_module_header(struct toi_module_header*);
 void dump_pagemap();
+void dump_extent_chain(struct hibernate_extent_chain*);
 void dump_block_chains(struct hibernate_extent_chain*);
 #else /* DEBUG */
 # define dprintf(f, ...) ((void)0)

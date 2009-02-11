@@ -42,7 +42,7 @@ resume.elf: resume_restore.o resume_parser.o resume_debug.o resume_trampoline.o 
 	$(LD) $(LDFLAGS) -o $@ $^
 
 resume-test:
-	$(CC) -funit-at-a-time -g resume.c resume_restore.c resume_parser.c resume_debug.c resume_bitops.c resume_dyn_pageflags.c -o resume -DDYN_PAGEFLAGS -DDEBUG -DTESTING -Wall
+	$(CC) -funit-at-a-time -g resume.c resume_restore.c resume_parser.c resume_debug.c resume_bitops.c resume_bitmaps.c -o resume -DDEBUG -DTESTING -Wall
 
 tidy dist:
 	rm -f *.o *.lo *.a *.lst *.elf .*.d *.tmp

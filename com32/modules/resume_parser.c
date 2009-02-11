@@ -82,96 +82,99 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 	READ_BUFFER(toi_file_header, struct toi_file_header*);
 
 	/* We only attempt to resume if the magic binary signature is found */
-	if (!parse_signature(toi_file_header)) {
+	if (!parse_signature(toi_file_header))
 		//error("Invalid TuxOnIce file.\n");
 		goto bail;
-	} else {
-		dprintf("TuxOnIce: binary signature found.\n");
 
-		/*
-		 * Setup some values we are going to need to load the bitmaps.
-		 * These are kernel dependent (configuration dependent) so we
-		 * need to store them in the image.
-		 * XXX: In the static pageflags case, we assume only one zone.
-		 * I do not believe it supports NUMA.
-		 */
-		mm.num_nodes = toi_file_header->nodes_num;
-		mm.num_zones = toi_file_header->zones_num;
+	dprintf("TuxOnIce: binary signature found.\n");
 
-		/*
-		 * The original header is:
-		 *
-		 * struct toi_file_header {
-		 *	char sig[sig_size];
-		 *	int resumed_before;
-		 *	int devinfo_sz;
-		 *	unsigned long first_header_block;
-		 *	int have_image;
-		 *	int nodes_num;
-		 *	int zones_num;
-		 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
-		 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
-		 * };
-		 *
-		 * Our copy of the header is without:
-		 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
-		 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
-		 *
-		 */
-		size_bitmap = mm.num_nodes * mm.num_zones * sizeof(unsigned long);
-		MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_file_header));
+	/*
+	 * Setup some values we are going to need to load the bitmaps.
+	 * These are kernel dependent (configuration dependent) so we
+	 * need to store them in the image.
+	 * XXX: In the static pageflags case, we assume only one zone.
+	 * I do not believe it supports NUMA.
+	 */
+	mm.num_nodes = toi_file_header->num_nodes;
+	mm.num_zones = toi_file_header->num_zones;
 
-		READ_BUFFER(mm.zones_start_pfn, unsigned long*);
-		MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
+	/*
+	 * The original header is:
+	 *
+	 * struct toi_file_header {
+	 *	char sig[sig_size];
+	 *	int resumed_before;
+	 *	unsigned long first_header_block;
+	 *	int have_image;
+	 *	int devinfo_sz;
+	 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
+	 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
+	 * };
+	 *
+	 * Our copy of the header is without:
+	 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
+	 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
+	 *
+	 */
+	size_bitmap = mm.num_nodes * mm.num_zones * sizeof(unsigned long);
+	MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_file_header));
 
-		READ_BUFFER(mm.zones_max_offset, unsigned long*);
-		MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
+	READ_BUFFER(mm.zones_start_pfn, unsigned long*);
+	MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
 
-		dump_toi_file_header(toi_file_header);
+	READ_BUFFER(mm.zones_max_offset, unsigned long*);
+	MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
 
-		/* Get extents info */
-		toi_image_buffer_posn = PAGE_SIZE;
+	dump_toi_file_header(toi_file_header);
 
-		memcpy(&toi_writer_posn_save,
-		       toi_image_buffer+toi_image_buffer_posn,
-		       sizeof(toi_writer_posn_save));
-		MOVE_FORWARD_BUFFER_POINTER(sizeof(toi_writer_posn_save));
+	/* Get extents info */
+	toi_image_buffer_posn = PAGE_SIZE;
 
-		for (i = 0; i < 4; i++)
-			dprintf("Posn %d: Chain %d, extent %d, offset %lu.\n",
-					i, toi_writer_posn_save[i].chain_num,
-					toi_writer_posn_save[i].extent_num,
-					toi_writer_posn_save[i].offset);
+	memcpy(&toi_writer_posn_save,
+	       toi_image_buffer+toi_image_buffer_posn,
+	       sizeof(toi_writer_posn_save));
+	MOVE_FORWARD_BUFFER_POINTER(sizeof(toi_writer_posn_save));
 
-		/* Skip dev_info */
-		MOVE_FORWARD_BUFFER_POINTER(toi_file_header->devinfo_sz);
+	dprintf("Disk extents offsets:\n");
+	for (i = 0; i < 4; i++)
+		dprintf("\tPosn %d: Chain %d, extent %d, offset %lu.\n",
+				i, toi_writer_posn_save[i].chain_num,
+				toi_writer_posn_save[i].extent_num,
+				toi_writer_posn_save[i].offset);
 
-		/* Load chains */
-		// XXX This assumes only one chain (one device).
-		// FIXME (easy fix)
-		READ_BUFFER(chain, struct hibernate_extent_chain*);
-		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
+	if (!toi_file_header->devinfo_sz)
+		/* Backward compatibility */
+		toi_file_header->devinfo_sz = 16;
+	/* Skip dev_info */
+	MOVE_FORWARD_BUFFER_POINTER(toi_file_header->devinfo_sz);
 
-		/* This is not needed */
-		//toi_load_extent_chain(chain);
-		//dump_block_chains(chain);
+	/* Load chains */
+	// XXX This assumes only one chain (one device).
+	// FIXME (easy fix)
+	READ_BUFFER(chain, struct hibernate_extent_chain*);
+	MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
 
-		/*
-		 * The header is located after:
-		 *	+ the toi_file_header
-		 *	+ the devinfo struct (we pass it in the image as we
-		 *	  don't want to compute its size here - too many complex
-		 *	  dependencies)
-		 *	+ the chain of extents
-		 */
-		header_offset = PAGE_SIZE +
-			sizeof(struct toi_file_header) -
-			sizeof(unsigned long) +
-			toi_file_header->devinfo_sz +
-			sizeof(struct hibernate_extent_chain) +
-			2 * sizeof(unsigned long) * chain->num_extents;
-		toi_image_buffer_posn = header_offset;
-	}
+	dump_extent_chain(chain);
+
+	/* This is not needed, as we have filesystem drivers */
+	//toi_load_extent_chain(chain);
+	//dump_block_chains(chain);
+
+	/*
+	 * The header is located after:
+	 *	+ the toi_file_header
+	 *	+ the devinfo struct (we pass it in the image as we
+	 *	  don't want to compute its size here - too many complex
+	 *	  dependencies)
+	 *	+ the chain of extents
+	 */
+	header_offset = PAGE_SIZE +
+		sizeof(struct toi_file_header) +
+		sizeof(unsigned long) +
+		toi_file_header->devinfo_sz +
+		sizeof(struct hibernate_extent_chain) +
+		2 * sizeof(unsigned long) * chain->num_extents;
+	toi_image_buffer_posn = header_offset;
 
 	/* Read metadata */
 	READ_BUFFER(toi_header, struct toi_header*);
@@ -192,7 +195,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 		READ_BUFFER(module_extra_info, int*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(int));
 		if (*module_extra_info) {
-			dprintf("\tmodule_extra_info\t\t%d\n",
+			dprintf("\textra_info\t%d\n",
 				*module_extra_info);
 			MOVE_FORWARD_BUFFER_POINTER(*module_extra_info);
 		}
@@ -204,7 +207,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 	/* Load the bitmap from disk */
 	load_bitmap();
-	dump_pagemap();
+	dump_pagemap(); /* Only useful when using dyn_pageflags */
 
 	/*
 	 * The following performs some sanity checks.
@@ -212,8 +215,8 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 	 * performance.
 	 */
 #ifdef DEBUG
-	//if(check_number_of_pfn(toi_header))
-	//	goto bail;
+	if(check_number_of_pfn(toi_header))
+		goto bail;
 #endif
 	return 0;
 

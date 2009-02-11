@@ -27,22 +27,19 @@ void dump_toi_file_header(struct toi_file_header* toi_file_header)
 	printf("File header:\n");
 	printf("\tresumed_before\t\t%d\n", toi_file_header->resumed_before);
 	printf("\tdevinfo_sz\t\t%d\n", toi_file_header->devinfo_sz);
-	printf("\theader_offset\t\t%lu\n", toi_file_header->header_offset);
 	printf("\tfirst_header_block\t%lu\n",
 		toi_file_header->first_header_block);
 	printf("\thave_image\t\t%d\n", toi_file_header->have_image);
-	printf("\tnodes_num\t\t%d\n", toi_file_header->nodes_num);
-	printf("\tzones_num\t\t%d\n", toi_file_header->zones_num);
 
-	for (i=0; i<toi_file_header->nodes_num; i++) {
-		for (j=0; j<toi_file_header->zones_num; j++) {
+	for (i = 0; i < toi_file_header->num_nodes; i++) {
+		for (j=0; j<toi_file_header->num_zones; j++) {
 			printf("\tzones_start_pfn[%d][%d]\t0x%08lx\n",
 				i, j,
-				(unsigned long) mm.zones_start_pfn[i * toi_file_header->zones_num + j]);
+				(unsigned long) mm.zones_start_pfn[i * toi_file_header->num_zones + j]);
 
 			printf("\tzones_max_offset[%d][%d]\t0x%08lx\n",
 				i, j,
-				(unsigned long) mm.zones_max_offset[i * toi_file_header->zones_num + j]);
+				(unsigned long) mm.zones_max_offset[i * toi_file_header->num_zones + j]);
 		}
 	}
 }
@@ -65,6 +62,7 @@ void dump_toi_header(struct toi_header* toi_header)
 	printf("\tsize\t\t%lu\n", toi_header->size);
 	printf("\torig_mem_free\t%lu\n", toi_header->orig_mem_free);
 	printf("\tpage_size\t%d\n", toi_header->page_size);
+	printf("\tpageset_1_size\t%d\n", toi_header->pagedir.size);
 	printf("\tpageset_2_size\t%d\n", toi_header->pageset_2_size);
 	printf("\tparam0\t\t%d\n", toi_header->param0);
 	printf("\tparam1\t\t%d\n", toi_header->param1);
@@ -92,15 +90,16 @@ void dump_toi_module_header(struct toi_module_header * toi_module_header)
 #endif /* METADATA_DEBUG */
 }
 
+#ifdef DYN_PAGEFLAGS
 void dump_pagemap()
 {
 	int node_id, zone_nr = 0;
 	unsigned long ****bitmap = pagemap.bitmap;
 
-	printf(" --- Dump bitmap ---\n");
-
 	if (!bitmap)
-		goto out;
+		return;
+
+	printf("Dump of pagedirs bitmap:\n");
 
 	for (node_id = 0; node_id < mm.num_nodes; node_id++) {
 		printf("%p: Node %d => %p\n",
@@ -140,9 +139,10 @@ void dump_pagemap()
 #endif
 		}
 	}
-out:
-	printf(" --- Dump of bitmap finishes ---\n");
 }
+#else
+inline void dump_pagemap() {return;}
+#endif /* !DYN_PAGEFLAGS */
 
 /**
  * dump_block_chains: Print the contents of the bdev info array.
@@ -173,9 +173,18 @@ void dump_block_chains(struct hibernate_extent_chain* chain)
 	}
 #endif /* METADATA_DEBUG */
 }
+
+void dump_extent_chain(struct hibernate_extent_chain* chain)
+{
+	printf("Disk extents chains:\n");
+	printf("\tsize\t\t%d\n", chain->size);
+	printf("\tnum_extents\t%d\n", chain->num_extents);
+}
 #else /* DEBUG */
 # define dump_toi_file_header(a, ...) ((void)0)
 # define dump_toi_header(a, ...) ((void)0)
 # define dump_toi_module_header(a, ...) ((void)0)
 # define dump_pagemap(a, ...) ((void)0)
+# define dump_extent_chain(a, ...) ((void)0)
+# define dump_block_chains(a, ...) ((void)0)
 #endif /* !DEBUG */

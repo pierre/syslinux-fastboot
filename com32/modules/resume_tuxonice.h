@@ -45,9 +45,9 @@ struct dyn_pageflags {
 	spinlock_t struct_lock;
 } pagemap;
 #else
-//struct pageflags {
-//	unsigned long ****bitmap; /* [pg_dat][zone][page_num] */
-//} pagemap;
+struct pageflags {
+	unsigned long ****bitmap; /* [pg_dat][zone][page_num] */
+} pagemap;
 #endif /* !DYN_PAGEFLAGS */
 
 /*
@@ -76,12 +76,11 @@ static char *tuxonice_signature = "\xed\xc3\x02\xe9\x98\x56\xe5\x0c";
 struct toi_file_header {
 	char sig[sig_size];			/* TuxOnIce signature */
 	int resumed_before;			/* Unused */
-	int devinfo_sz;				/* Typically 16 */
-	unsigned long header_offset;		/* Offset to the extents */
 	unsigned long first_header_block;	/* Unused */
 	int have_image;				/* Unused */
-	int nodes_num;				/* MAX_NUMNODES */
-	int zones_num;				/* MAX_NR_ZONES */
+	int devinfo_sz;				/* Typically 16 */
+	int num_nodes;				/* MAX_NUMNODES */
+	int num_zones;				/* MAX_NR_ZONES */
 };
 
 /**

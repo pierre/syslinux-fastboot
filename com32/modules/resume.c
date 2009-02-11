@@ -71,7 +71,8 @@ static void boot_image(int len)
 {
 	long pagedir1_size, pagedir2_size;
 
-	read_metadata(&pagedir1_size, &pagedir2_size);
+	if(read_metadata(&pagedir1_size, &pagedir2_size))
+		return;
 
 	/* Will return in protected mode */
 	load_memory_map(len, pagedir1_size, pagedir2_size);

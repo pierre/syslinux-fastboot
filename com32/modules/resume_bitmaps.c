@@ -36,8 +36,12 @@ int load_bitmap(void)
 	int zone_id;
 	int* number_zones;
 
+	dprintf("Memory bitmaps:\n");
+
 	READ_BUFFER(number_zones, int*);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(int));
+
+	dprintf("\tNumber of zones\t\t%d\n", *number_zones);
 
 	pagemap.bitmap = malloc(*number_zones * sizeof(unsigned long*));
 
@@ -46,35 +50,37 @@ int load_bitmap(void)
 
 		READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-		dprintf("Zone %d: start pfn\t0x%08lx\n", zone_id, *pfn);
+		dprintf("\tZone %d: start pfn\t0x%08lx\n", zone_id, *pfn);
 
 		/* Sanity checking */
-		if(mm.zones_start_pfn[zone_id] != *pfn) {
-			dprintf("Zone %d: invalid start pfn\t0x%08lx\n",
-				 zone_id, *pfn);
-			dprintf("Zone %d: expected start pfn\t0x%08lx\n",
-				 zone_id, mm.zones_start_pfn[zone_id]);
-			goto bail;
-		}
+		//if(mm.zones_start_pfn[zone_id] != *pfn) {
+		//	dprintf("Zone %d: invalid start pfn\t0x%08lx\n",
+		//		 zone_id, *pfn);
+		//	dprintf("Zone %d: expected start pfn\t0x%08lx\n",
+		//		 zone_id, mm.zones_start_pfn[zone_id]);
+		//	goto bail;
+		//}
 
-		READ_BUFFER(pfn, unsigned long*);
+		//READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-		dprintf("Zone %d: end pfn\t0x%08lx\n", zone_id, *pfn);
+		dprintf("\tZone %d: end pfn\t\t0x%08lx\n", zone_id, *pfn);
 
 		/* Sanity checking */
-		if(mm.zones_start_pfn[zone_id] + mm.zones_max_offset[zone_id] !=
-			*pfn) {
-			dprintf("Zone %d: invalid end pfn\t0x%08lx\n",
-				 zone_id, *pfn);
-			dprintf("Zone %d: expected end pfn\t0x%08lx\n",
-				 zone_id, mm.zones_start_pfn[zone_id] +
-				 mm.zones_max_offset[zone_id]);
-			goto bail;
-		}
+		//if(mm.zones_start_pfn[zone_id] + mm.zones_max_offset[zone_id] !=
+		//	*pfn) {
+		//	dprintf("Zone %d: invalid end pfn\t0x%08lx\n",
+		//		 zone_id, *pfn);
+		//	dprintf("Zone %d: expected end pfn\t0x%08lx\n",
+		//		 zone_id, mm.zones_start_pfn[zone_id] +
+		//		 mm.zones_max_offset[zone_id]);
+		//	goto bail;
+		//}
 
 		/* Load the bitmap itself */
 		pagemap.bitmap[zone_id] = malloc(PAGE_SIZE);
-		READ_BUFFER(pagemap.bitmap[zone_id], unsigned long*);
+		memcpy(pagemap.bitmap[zone_id],
+		       toi_image_buffer + toi_image_buffer_posn,
+		       PAGE_SIZE);
 		MOVE_FORWARD_BUFFER_POINTER(PAGE_SIZE);
 	}
 
@@ -99,7 +105,8 @@ int check_number_of_pfn(struct toi_header* toi_header) {
 	int i;
 	long pfn = 0, total_pfn = 0;
 
-	printf("Number of pages to load: %lu\n", toi_header->pagedir.size);
+	printf("Number of pages to load (pagedir1): %lu\n",
+		toi_header->pagedir.size);
 	for (i = 0; i < mm.num_zones; i++) {
 		int num_pfn = 0;
 		pfn = -1;
@@ -113,9 +120,12 @@ int check_number_of_pfn(struct toi_header* toi_header) {
 	}
 
 	if (total_pfn != toi_header->pagedir.size)
-		printf("BUG: %lu != %lu\n", total_pfn, toi_header->pagedir.size);
+		printf("BUG: %lu != %lu\n",
+			total_pfn,
+			toi_header->pagedir.size);
 	else
-		printf("Number of pages to load: %lu\n", toi_header->pagedir.size);
+		printf("Number of pages to load: %lu\n",
+			toi_header->pagedir.size);
 
 	return total_pfn-toi_header->pagedir.size;
 }
