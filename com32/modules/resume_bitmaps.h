@@ -14,17 +14,53 @@
 #ifndef RESUME_BITMAPS_H
 #define RESUME_BITMAPS_H
 
-/*
- *  PAGENUMBER gives the index of the page within the zone.
- *  PAGEINDEX gives the index of the unsigned long within that page.
- *  PAGEBIT gives the index of the bit within the unsigned long.
- */
-#define PAGENUMBER(zone_offset) ((int) ((zone_offset) >> (PAGE_SHIFT + 3)))
-#define PAGEINDEX(zone_offset) ((int) (((zone_offset) & UL_NUM_MASK) >> UL_SHIFT))
-#define PAGEBIT(zone_offset) ((int) ((zone_offset) & BIT_NUM_MASK))
+#define BM_END_OF_MAP	(~0UL)
+
+/* struct linked_page is used to build chains of pages */
+#define LINKED_PAGE_DATA_SIZE	(PAGE_SIZE - sizeof(void *))
+
+struct linked_page {
+	struct linked_page *next;
+	char data[LINKED_PAGE_DATA_SIZE];
+} __attribute__((packed));
+
+struct bm_block {
+	struct list_head hook;		/* hook into a list of bitmap blocks */
+	unsigned long start_pfn;	/* pfn represented by the first bit */
+	unsigned long end_pfn;		/* pfn represented by the last bit + 1 */
+	unsigned long *data;		/* bitmap representing pages */
+};
+
+/* struct bm_position is used for browsing memory bitmaps */
+struct bm_position {
+	struct bm_block *block;
+	int bit;
+};
+
+struct memory_bitmap {
+	struct list_head blocks;	/* list of bitmap blocks */
+	struct linked_page *p_list;	/* list of pages used to store zone
+					 * bitmap objects and bitmap block
+					 * objects
+					 */
+	struct bm_position cur;		/* most recently used bit position */
+	struct bm_position iter;	/* most recently used bit position
+					 * when iterating over a bitmap.
+					 */
+};
+
+static inline unsigned long bm_block_bits(struct bm_block *bb)
+{
+	return bb->end_pfn - bb->start_pfn;
+}
+
+struct memory_bitmap *pageset1;
 
 int load_bitmap(void);
 int check_number_of_pfn(struct toi_header*);
-unsigned long bitmap_get_next_bit_on(long, int);
+void memory_bm_position_reset(struct memory_bitmap*);
+unsigned long memory_bm_next_pfn(struct memory_bitmap*);
+unsigned long find_next_bit(const unsigned long*, unsigned long,
+			    unsigned long);
 
 #endif /* RESUME_BITMAPS_H */

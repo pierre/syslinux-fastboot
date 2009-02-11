@@ -17,12 +17,18 @@
 #include "resume_mm.h"
 #include "resume_debug.h"
 
+#ifndef DYN_PAGEFLAGS
+#include "resume_bitmaps.h"
+#endif /* !DYN_PAGEFLAGS */
+
 extern struct mm mm;
 
 #ifdef DEBUG
 void dump_toi_file_header(struct toi_file_header* toi_file_header)
 {
+#ifdef DYN_PAGEFLAGS
 	int i, j;
+#endif /* DYN_PAGEFLAGS */
 
 	printf("File header:\n");
 	printf("\tresumed_before\t\t%d\n", toi_file_header->resumed_before);
@@ -31,6 +37,7 @@ void dump_toi_file_header(struct toi_file_header* toi_file_header)
 		toi_file_header->first_header_block);
 	printf("\thave_image\t\t%d\n", toi_file_header->have_image);
 
+#ifdef DYN_PAGEFLAGS
 	for (i = 0; i < toi_file_header->num_nodes; i++) {
 		for (j=0; j<toi_file_header->num_zones; j++) {
 			printf("\tzones_start_pfn[%d][%d]\t0x%08lx\n",
@@ -42,6 +49,7 @@ void dump_toi_file_header(struct toi_file_header* toi_file_header)
 				(unsigned long) mm.zones_max_offset[i * toi_file_header->num_zones + j]);
 		}
 	}
+#endif /* DYN_PAGEFLAGS */
 }
 
 void dump_toi_header(struct toi_header* toi_header)
@@ -141,7 +149,18 @@ void dump_pagemap()
 	}
 }
 #else
-inline void dump_pagemap() {return;}
+void dump_pagemap()
+{
+	struct bm_block* bb;
+
+	printf("Memory bitmap:\n");
+
+	list_for_each_entry(bb, &pageset1->blocks, hook) {
+		printf("\tMemory extent [%lu - %lu]\n",
+					bb->start_pfn,
+					bb->end_pfn);
+	}
+}
 #endif /* !DYN_PAGEFLAGS */
 
 /**

@@ -36,59 +36,42 @@ int load_bitmap(void)
 	int zone_id;
 	int* number_zones;
 
-	dprintf("Memory bitmaps:\n");
+	pageset1 = malloc(sizeof(struct memory_bitmap));
+	pageset1->blocks.prev = &pageset1->blocks;
+	pageset1->blocks.next = &pageset1->blocks;
 
 	READ_BUFFER(number_zones, int*);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(int));
 
-	dprintf("\tNumber of zones\t\t%d\n", *number_zones);
-
-	pagemap.bitmap = malloc(*number_zones * sizeof(unsigned long*));
+	dprintf("Number of memory zones\t\t%d\n", *number_zones);
 
 	for (zone_id = 0; zone_id < *number_zones; zone_id++) {
+		struct bm_block *bb = malloc(sizeof(struct bm_block));
 		unsigned long* pfn;
 
 		READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-		dprintf("\tZone %d: start pfn\t0x%08lx\n", zone_id, *pfn);
+		bb->start_pfn = *pfn;
+		//dprintf("\tZone %d: start pfn\t0x%08lx\n", zone_id,
+		//					   bb->start_pfn);
 
-		/* Sanity checking */
-		//if(mm.zones_start_pfn[zone_id] != *pfn) {
-		//	dprintf("Zone %d: invalid start pfn\t0x%08lx\n",
-		//		 zone_id, *pfn);
-		//	dprintf("Zone %d: expected start pfn\t0x%08lx\n",
-		//		 zone_id, mm.zones_start_pfn[zone_id]);
-		//	goto bail;
-		//}
-
-		//READ_BUFFER(pfn, unsigned long*);
+		READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
-		dprintf("\tZone %d: end pfn\t\t0x%08lx\n", zone_id, *pfn);
-
-		/* Sanity checking */
-		//if(mm.zones_start_pfn[zone_id] + mm.zones_max_offset[zone_id] !=
-		//	*pfn) {
-		//	dprintf("Zone %d: invalid end pfn\t0x%08lx\n",
-		//		 zone_id, *pfn);
-		//	dprintf("Zone %d: expected end pfn\t0x%08lx\n",
-		//		 zone_id, mm.zones_start_pfn[zone_id] +
-		//		 mm.zones_max_offset[zone_id]);
-		//	goto bail;
-		//}
+		bb->end_pfn = *pfn;
+		//dprintf("\tZone %d: end pfn\t\t0x%08lx\n", zone_id,
+		//					   bb->end_pfn);
 
 		/* Load the bitmap itself */
-		pagemap.bitmap[zone_id] = malloc(PAGE_SIZE);
-		memcpy(pagemap.bitmap[zone_id],
+		bb->data = malloc(PAGE_SIZE);
+		memcpy(bb->data,
 		       toi_image_buffer + toi_image_buffer_posn,
 		       PAGE_SIZE);
 		MOVE_FORWARD_BUFFER_POINTER(PAGE_SIZE);
+
+		list_add(&bb->hook, &pageset1->blocks);
 	}
 
 	return 0;
-
-bail:
-	// TODO free_bitmap()!
-	return -1;
 }
 
 /**
@@ -102,88 +85,105 @@ bail:
  *	total_pfn-toi_header->pagedir.size
  **/
 int check_number_of_pfn(struct toi_header* toi_header) {
-	int i;
 	long pfn = 0, total_pfn = 0;
 
 	printf("Number of pages to load (pagedir1): %lu\n",
 		toi_header->pagedir.size);
-	for (i = 0; i < mm.num_zones; i++) {
-		int num_pfn = 0;
-		pfn = -1;
-		do {
-			pfn = bitmap_get_next_bit_on(pfn, i);
-			if(pfn !=  -1)
-				num_pfn++;
-		} while (pfn != -1);
-		printf("\tZone %d: %d pfns\n", i, num_pfn);
-		total_pfn += num_pfn;
+
+	memory_bm_position_reset(pageset1);
+	for (pfn = memory_bm_next_pfn(pageset1); pfn != BM_END_OF_MAP;
+		pfn = memory_bm_next_pfn(pageset1)) {
+		//printf("\tpfn: %lu\n", pfn);
+		total_pfn++;
 	}
 
 	if (total_pfn != toi_header->pagedir.size)
 		printf("BUG: %lu != %lu\n",
 			total_pfn,
 			toi_header->pagedir.size);
-	else
-		printf("Number of pages to load: %lu\n",
-			toi_header->pagedir.size);
 
 	return total_pfn-toi_header->pagedir.size;
 }
 
+void memory_bm_position_reset(struct memory_bitmap *bm)
+{
+	bm->cur.block = list_entry(bm->blocks.next, struct bm_block, hook);
+	bm->cur.bit = 0;
+
+	bm->iter.block = list_entry(bm->blocks.next, struct bm_block, hook);
+	bm->iter.bit = 0;
+}
+
 /**
  * bitmap_get_next_bit_on - get the next bit set in a bitmap
- * @previous_pfn:	The previous pfn. We always return a value > this.
- * @zone_id:		The current zone searched.
+ * @bm:	bitmap to parse
  *
- * Given a pfn (possibly -1), find the next pfn in the bitmap that
- * is set. If there are no more bit set, return -1.
+ * Find the pfn that corresponds to the next set bit in the bitmap. If the
+ * pfn cannot be found, BM_END_OF_MAP is returned.
  **/
-unsigned long bitmap_get_next_bit_on(long previous_pfn, int zone_id)
+unsigned long memory_bm_next_pfn(struct memory_bitmap *bm)
 {
-	unsigned long *ul = NULL;
-	unsigned long prev_pfn;
-	int zone_offset, pagebit, first;
+	struct bm_block *bb;
+	int bit;
 
-	first = (previous_pfn == -1);
-
-	if (first)
-		prev_pfn = mm.zones_start_pfn[zone_id];
-	else
-		prev_pfn = previous_pfn;
-
-	zone_offset = prev_pfn - mm.zones_start_pfn[zone_id];
-
-	if (first) {
-		prev_pfn--;
-		zone_offset--;
-	} else
-		ul = (pagemap.bitmap[zone_id][PAGENUMBER(zone_offset)+2]) +
-		      PAGEINDEX(zone_offset);
-
+	bb = bm->iter.block;
 	do {
-		prev_pfn++;
-		zone_offset++;
+		bit = bm->iter.bit;
+		bit = find_next_bit(bb->data, bm_block_bits(bb), bit);
+		if (bit < bm_block_bits(bb))
+			goto Return_pfn;
 
-		if (prev_pfn >= (unsigned long) (mm.zones_start_pfn[zone_id] +
-						 mm.zones_max_offset[zone_id])) {
-			return -1;
-		}
+		bb = list_entry(bb->hook.next, struct bm_block, hook);
+		bm->iter.block = bb;
+		bm->iter.bit = 0;
+	} while (&bb->hook != &bm->blocks);
 
-		/*
-		 * This could be optimised, but there are more
-		 * important things and the code is simple at
-		 * the moment 
-		 */
-		pagebit = PAGEBIT(zone_offset);
+	memory_bm_position_reset(bm);
+	return BM_END_OF_MAP;
 
-		if (!pagebit)
-			ul = (pagemap.bitmap[zone_id][PAGENUMBER(zone_offset) + 2]) +
-			PAGEINDEX(zone_offset);
+ Return_pfn:
+	bm->iter.bit = bit + 1;
+	return bb->start_pfn + bit;
+}
 
-		if(!ul)
-			continue;
+/*
+ * Find the next set bit in a memory region.
+ */
+unsigned long find_next_bit(const unsigned long *addr, unsigned long size,
+			    unsigned long offset)
+{
+	const unsigned long *p = addr + BITOP_WORD(offset);
+	unsigned long result = offset & ~(BITS_PER_LONG-1);
+	unsigned long tmp;
 
-	} while(!test_bit(pagebit, (u32 *) ul));
+	if (offset >= size)
+		return size;
+	size -= result;
+	offset %= BITS_PER_LONG;
+	if (offset) {
+		tmp = *(p++);
+		tmp &= (~0UL << offset);
+		if (size < BITS_PER_LONG)
+			goto found_first;
+		if (tmp)
+			goto found_middle;
+		size -= BITS_PER_LONG;
+		result += BITS_PER_LONG;
+	} 
+	while (size & ~(BITS_PER_LONG-1)) {
+		if ((tmp = *(p++)))
+			goto found_middle;
+		result += BITS_PER_LONG;
+		size -= BITS_PER_LONG;
+	}
+	if (!size)
+		return result;
+	tmp = *p;
 
-	return prev_pfn;
+found_first:
+	tmp &= (~0UL >> (BITS_PER_LONG - size));
+	if (tmp == 0UL)		/* Are any bits set? */
+		return result + size;	/* Nope. */
+found_middle:
+	return result + __ffs(tmp);
 }

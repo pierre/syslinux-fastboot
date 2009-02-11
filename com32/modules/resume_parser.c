@@ -75,9 +75,10 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 	struct hibernate_extent_chain* chain;
 
 	int* module_extra_info;
-	int size_bitmap, header_offset;
-
-	int i;
+	int header_offset, i;
+#ifdef DYN_PAGEFLAGS
+	int size_bitmap;
+#endif /* DYN_PAGEFLAGS */
 
 	READ_BUFFER(toi_file_header, struct toi_file_header*);
 
@@ -107,15 +108,15 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 	 *	unsigned long first_header_block;
 	 *	int have_image;
 	 *	int devinfo_sz;
-	 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
-	 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
 	 * };
 	 *
-	 * Our copy of the header is without:
+	 * The header needs:
 	 *	unsigned long zones_start_pfn[MAX_NUMNODES][MAX_NR_ZONES];
 	 *	unsigned long zones_max_offset[MAX_NUMNODES][MAX_NR_ZONES];
 	 *
+	 * to use dyn_pageflags.
 	 */
+#ifdef DYN_PAGEFLAGS
 	size_bitmap = mm.num_nodes * mm.num_zones * sizeof(unsigned long);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_file_header));
 
@@ -124,6 +125,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 	READ_BUFFER(mm.zones_max_offset, unsigned long*);
 	MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
+#endif /* DYN_PAGEFLAGS */
 
 	dump_toi_file_header(toi_file_header);
 
@@ -131,7 +133,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 	toi_image_buffer_posn = PAGE_SIZE;
 
 	memcpy(&toi_writer_posn_save,
-	       toi_image_buffer+toi_image_buffer_posn,
+	       toi_image_buffer + toi_image_buffer_posn,
 	       sizeof(toi_writer_posn_save));
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(toi_writer_posn_save));
 
@@ -207,7 +209,7 @@ int read_metadata(long* pagedir1_size, long* pagedir2_size)
 
 	/* Load the bitmap from disk */
 	load_bitmap();
-	dump_pagemap(); /* Only useful when using dyn_pageflags */
+	dump_pagemap();
 
 	/*
 	 * The following performs some sanity checks.

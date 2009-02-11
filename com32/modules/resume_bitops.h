@@ -17,5 +17,6 @@
 int test_bit(int, const u32*);
 void clear_bit(int, u32*);
 void showbits(unsigned long *);
+inline unsigned long __ffs(unsigned long);
 
 #endif /* RESUME_BITOPS_H */
