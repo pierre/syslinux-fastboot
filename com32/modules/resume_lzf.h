@@ -12,7 +12,7 @@
  * ----------------------------------------------------------------------- */
 
 /*
- * See resume_lzf.c for Copyright information.
+ * See resume_lzf.c for more Copyright information.
  */
 
 #ifndef _RESUME_LZF_H

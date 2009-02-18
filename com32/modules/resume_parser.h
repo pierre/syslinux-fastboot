@@ -14,6 +14,6 @@
 #ifndef _RESUME_PARSER_H
 #define _RESUME_PARSER_H
 
-int read_metadata(long*, long*);
+int read_metadata(unsigned long*, unsigned long*);
 
 #endif /* _RESUME_PARSER_H */

@@ -19,12 +19,155 @@
 #ifndef TESTING
 #include <syslinux/movebits.h>
 #include <syslinux/bootrm.h>
+#include "resume_trampoline.h"
 #endif /* !TESTING */
 
 #include "resume.h"
 #include "resume_debug.h"
 #include "resume_restore.h"
 #include "resume_bitmaps.h"
+#include "resume_lzf.h"
+
+#ifndef TESTING
+/* Syslinux variables */
+struct syslinux_memmap *mmap = NULL, *amap = NULL;
+struct syslinux_rm_regs regs;
+struct syslinux_movelist *ml = NULL;
+
+/**
+ * memory_map_add - relocate a range of pfns
+ * @start_range_pfn:		minimum pfn to add
+ * @end_range_pfn:		maximum pfn to add
+ * @data_addr:			address of data to save
+ * @pfn_read:			number of valid pfns read so far
+ * @syslinux_reserved:		number of pfns skipped so far (occupied by
+ *				SYSLINUX)
+ * @highmem_unreachable:	number of pfns skipped so far (> 4GB)
+ * @mapped:			number of pfns successfully mapped so far
+ *
+ * The specified range of pfns is added to the SYSLINUX memory map.
+ * We expect absolute pfns, not zone offsets.
+ *
+ * data_addr points to a big chunk af data. Potentially not all of it will be
+ * relocated.
+ *
+ * Side effects:
+ *	syslinux_reserved, highmem_unreachable and mapped are modified,
+ *	if needed.
+ **/
+static int memory_map_add(unsigned long start_range_pfn,
+			  unsigned long end_range_pfn,
+			  addr_t data_addr,
+			  unsigned int* syslinux_reserved,
+			  unsigned int* highmem_unreachable,
+			  unsigned int* mapped)
+{
+	unsigned int nb_of_pfns, i;
+	unsigned long final_start_range_pfn = start_range_pfn;
+	unsigned long final_end_range_pfn = end_range_pfn;
+	addr_t data_location = data_addr;
+
+	/* Destination for data after relocation */
+	addr_t final_load_addr;
+	/* Address of the highest most page after relocation */
+	addr_t final_upper_addr;
+	/* Size of the data to shuffle */
+	addr_t dsize;
+
+	/*
+	 * This portion is not available (used by syslinux)
+	 * We can ask the kernel to reserve the first 64K of
+	 * the memory (technically for BIOS bugs). See:
+	 *
+	 *	X86_RESERVE_LOW_64K
+	 *	git: fc38151947477596aa27df6c4306ad6008dc6711
+	 *
+	 * You need a 2.6.28 kernel or more recent.
+	 */
+	final_load_addr = __pfn_to_phys(final_start_range_pfn);
+	while (final_load_addr < 0x7c00) {
+		/* Debug info */
+		(*syslinux_reserved)++;
+
+		/* Skip this pfn */
+		final_start_range_pfn++;
+		final_load_addr = __pfn_to_phys(final_start_range_pfn);
+	}
+
+	/*
+	 * SYSLINUX cannot access memory > 4GB.
+	 * This patch will work with:
+	 *
+	 *	CONFIG_HIGHMEM4G
+	 *
+	 * but _NOT_ with
+	 *
+	 *	CONFIG_HIGHMEM64G
+	 *
+	 * Note: this is always false since upper_addr is
+	 * uint32_t. But I kept it not to forget...
+	 */
+	final_upper_addr = __pfn_to_phys(final_end_range_pfn);
+	while (final_upper_addr > 0x100000000) {
+		/* Debug info */
+		(*highmem_unreachable)++;
+
+		/* Skip this pfn */
+		final_end_range_pfn--;
+		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
+	}
+
+	/* Free [start_range_pfn...final_start_range_pfn[ */
+	for (i = start_range_pfn; i < final_start_range_pfn; i++)
+		continue; //XXX
+
+	/* Free [start_range_pfn...final_start_range_pfn[ */
+	for (i = end_range_pfn + 1; i <= final_end_range_pfn; i++)
+		continue; //XXX
+
+	/* Keep track of the number of pages actually mapped */
+	nb_of_pfns = (final_end_range_pfn - final_start_range_pfn + 1);
+	(*mapped) += nb_of_pfns;
+
+	dsize = PAGE_SIZE * nb_of_pfns;
+	// XXX Check if right (char*)
+	data_location = data_addr + PAGE_SIZE *
+				(final_start_range_pfn - start_range_pfn);
+
+	/* Noisy. In a typical file, there will be ~15K of pages! */
+	//dprintf("Data at 0x%08x (len 0x%08x) will be relocated at 0x%08x\n",
+	//	  data_location, dzise, final_load_addr);
+
+	/* Memory region available? */
+	if (syslinux_memmap_type(amap, final_load_addr,
+				 dsize) != SMT_FREE) {
+		printf("BUG: Memory segment at 0x%08x (len"
+		       "0x%08x) is unavailable\n",
+		       final_load_addr, dsize);
+		goto bail;
+	}
+
+	/* Mark this region as allocated in the available map */
+	if (syslinux_add_memmap(&amap,
+				final_load_addr, dsize,
+				SMT_ALLOC))
+		goto bail;
+
+	/* Data present region. Create a move entry for it. */
+	if (syslinux_add_movelist(&ml, final_load_addr,
+				  data_location,
+				  dsize))
+		goto bail;
+
+	return 0;
+
+bail:
+	syslinux_free_memmap(amap);
+	syslinux_free_memmap(mmap);
+	syslinux_free_movelist(ml);
+	return 1;
+}
+#endif /* !TESTING */
 
 /**
  * add_entry_list - add an entry to a data_buffers_list
@@ -138,7 +281,7 @@ static int skip_pagedir2(long pagedir2_size)
 {
 	long pfns_found = 0;
 	unsigned long* dest_pfn = NULL;
-	unsigned long* data_buffer_size;
+	unsigned int* data_buffer_size;
 
 	/* pagedir2 is PAGE_SIZE aligned */
 	do {
@@ -152,9 +295,9 @@ static int skip_pagedir2(long pagedir2_size)
 
 read_buf_size_pagedir2:
 		/* Read the size of the data */
-		data_buffer_size = (unsigned long*) (toi_image_buffer +
-						     toi_image_buffer_posn +
-						     sizeof(unsigned long));
+		data_buffer_size = (unsigned int*) (toi_image_buffer +
+						    toi_image_buffer_posn +
+						    sizeof(unsigned long));
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
 			toi_image_buffer_posn += 1;
 			/* This is not a bug */
@@ -163,7 +306,7 @@ read_buf_size_pagedir2:
 			/* This is a bug */
 			printf("BUG: end of pagedir2 reached but still "
 			       "pages to skip.\n");
-			printf("PFN %lu/%lu: %lu [%lu]\n",
+			printf("PFN %lu/%lu: %lu [%d]\n",
 			       pfns_found,
 			       pagedir2_size,
 			       *dest_pfn,
@@ -172,7 +315,8 @@ read_buf_size_pagedir2:
 		} else {
 			pfns_found++;
 			toi_image_buffer_posn += *data_buffer_size +
-						 2 * sizeof(unsigned long);
+						 sizeof(unsigned int) +
+						 sizeof(unsigned long);
 
 			/*
 			 * This is noisy: ~15K pfn.
@@ -180,7 +324,7 @@ read_buf_size_pagedir2:
 			 * in toi_bio_write_page() and check both outputs.
 			 */
 #ifdef METADATA_DEBUG
-			dprintf("%lu [%lu]\n",
+			dprintf("%lu [%d]\n",
 				 *dest_pfn,
 				 *data_buffer_size);
 #endif
@@ -201,22 +345,25 @@ bail:
  * to restore registers and page tables.
  **/
 int load_memory_map(unsigned long data_len,
-		    long pagedir1_size,
-		    long pagedir2_size)
+		    unsigned long pagedir1_size,
+		    unsigned long pagedir2_size)
 {
-	addr_t* data_buffer = malloc(PAGE_SIZE);
-	addr_t* data_load_addr = NULL;
+	void* data_buffer = malloc(PAGE_SIZE);
+	u8* data_load_addr = NULL;
 	addr_t* shuffling_load_addr;
 
-	unsigned long* data_buffer_size = NULL;
+	unsigned int* data_buffer_size = NULL;
 	unsigned long* dest_pfn = NULL;
 
-	unsigned long* pfn_read = malloc(sizeof(unsigned long));
+	unsigned int* pfn_read = malloc(sizeof(unsigned long));
 	unsigned long* start_range_pfn = malloc(sizeof(unsigned long));
 	unsigned long* prev_dest_pfn = malloc(sizeof(unsigned long));
 	*pfn_read = 0;
 	*start_range_pfn = 0;
 	*prev_dest_pfn = 0;
+
+	/* lzf support */
+	u8* uncompr_tmp = malloc(PAGE_SIZE);
 
 	/*
 	 * Used to move around chunks of data PAGE_SIZE aligned.
@@ -248,9 +395,9 @@ int load_memory_map(unsigned long data_len,
 
 	/* In testing mode, you cannot shuffle the memory :) */
 #ifndef TESTING
-	int* mapped = 0, syslinux_reserved = 0, highmem_unreachable = 0;
-	int err;
-	struct toi_boot_kernel_data *bkd;
+	unsigned int* mapped = 0;
+	unsigned int* syslinux_reserved = 0;
+	unsigned int* highmem_unreachable = 0;
 	struct syslinux_rm_regs regs;
 
 	/* Setup the syslinux memory map */
@@ -285,16 +432,16 @@ int load_memory_map(unsigned long data_len,
 
 read_buf_size_pagedir1:
 		/* Read the size of the data */
-		READ_BUFFER(data_buffer_size, unsigned long*);
+		READ_BUFFER(data_buffer_size, unsigned int*);
 
 		/* Read the size of the data */
-		data_buffer_size = (unsigned long*) (toi_image_buffer +
+		data_buffer_size = (unsigned int*) (toi_image_buffer +
 						     toi_image_buffer_posn +
 						     sizeof(unsigned long));
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
 			/* This is a bug: wrong buffer size */
 			printf("BUG: Wrong buffer size while reading pagedir1.\n");
-			printf("\tPFN %lu: buffer_size=%lu\n",
+			printf("\tPFN %lu: buffer_size=%d\n",
 			       *dest_pfn,
 			       *data_buffer_size);
 			goto bail;
@@ -304,8 +451,8 @@ read_buf_size_pagedir1:
 		 * The buffer size seem valid. Advance the pointer and
 		 * check if the pfn is in the bitmap.
 		 */
-		toi_image_buffer_posn += *data_buffer_size +
-					 2 * sizeof(unsigned long);
+		toi_image_buffer_posn += sizeof(unsigned int) +
+					 sizeof(unsigned long);
 		// XXX BROKEN
 		//if (!memory_bm_test_pfn(pageset1, *dest_pfn)) {
 		//	/* That shouldn't happen */
@@ -326,20 +473,38 @@ read_buf_size_pagedir1:
 		 * One solution is to hibernate in a Virtual Machine and connect
 		 * a virtual serial port to a pipe.
 		 */
-		dprintf("%lu [%lu]\n",
+		dprintf("%lu [%d]\n",
 			 *dest_pfn,
 			 *data_buffer_size);
 #endif /* METADATA_DEBUG */
 
 		/* Read the data */
-		READ_BUFFER(data_load_addr, addr_t*);
+		READ_BUFFER(data_load_addr, u8*);
+		MOVE_FORWARD_BUFFER_POINTER(*data_buffer_size);
 
 		/* Compressed data? */
 		if (*data_buffer_size < PAGE_SIZE) {
-			// TODO
-			//err = uncompress(uncompr_temp, &uncompr_len,
-			//		   data_buffer, *data_buffer_size);
-		} else
+			unsigned int uncompr_len;
+			int error;
+
+			error = lzf_decompress(data_load_addr,
+					       *data_buffer_size,
+					       uncompr_tmp,
+					       &uncompr_len);
+			if (uncompr_len != PAGE_SIZE) {
+				printf("BUG: error when uncompressing data.\n");
+				if (uncompr_len)
+					printf("PFN %lu: uncompressed size is "
+					       "%d != %d\n",
+					       *dest_pfn, uncompr_len,
+					       PAGE_SIZE);
+				else
+					printf("PFN %lu: error=%d.\n",
+					       *dest_pfn, error);
+				goto bail;
+			} else
+				memcpy(data_buffer, uncompr_tmp, PAGE_SIZE);
+		} else /* *data_buffer_size == PAGE_SIZE */
 			memcpy(data_buffer, data_load_addr, *data_buffer_size);
 
 		/*
@@ -407,8 +572,7 @@ extract_restore_list:
 			/* XXX Check it is absolute pfns and not zone offsets */
 			if(memory_map_add(*start_range_pfn,
 					  *prev_dest_pfn,
-					  shuffling_load_addr,
-					  pfn_read,
+					  (addr_t) shuffling_load_addr,
 					  syslinux_reserved,
 					  highmem_unreachable,
 					  mapped))
@@ -441,7 +605,7 @@ extract_restore_list:
 
 	/* Sanity check: have we read all data? */
 	if (*pfn_read != pagedir1_size) {
-		dprintf("BUG: pfn_read=%lu but pagedir1_size=%lu\n",
+		dprintf("BUG: pfn_read=%d but pagedir1_size=%lu\n",
 				*pfn_read,
 				pagedir1_size);
 		/* This is really bad - we cannot resume */
@@ -474,152 +638,5 @@ extract_restore_list:
 #endif
 
 bail:
-	return -1;
-}
-
-/**
- * memory_map_add - relocate a range of pfns
- * @start_range_pfn:		minimum pfn to add
- * @end_range_pfn:		maximum pfn to add
- * @data_addr:			address of data to save
- * @pfn_read:			number of valid pfns read so far
- * @syslinux_reserved:		number of pfns skipped so far (occupied by
- *				SYSLINUX)
- * @highmem_unreachable:	number of pfns skipped so far (> 4GB)
- * @mapped:			number of pfns successfully mapped so far
- *
- * The specified range of pfns is added to the SYSLINUX memory map.
- * We expect absolute pfns, not zone offsets.
- *
- * data_addr points to a big chunk af data. Potentially not all of it will be
- * relocated.
- *
- * Side effects:
- *	pfn_read, syslinux_reserved, highmem_unreachable and mapped are modified,
- *	if needed.
- **/
-int memory_map_add(unsigned long start_range_pfn,
-		   unsigned long end_range_pfn,
-		   addr_t* data_addr,
-		   int* pfn_read,
-		   int* syslinux_reserved,
-		   int* highmem_unreachable,
-		   int* mapped)
-{
-#ifndef TESTING
-	int nb_of_pfns;
-	/* Destination for data after relocation */
-	addr_t* load_addr = NULL;
-	/* Address of the highest most page */
-	addr_t* upper_addr = NULL;
-	/* Size of the data to shuffle */
-	addr_t dsize = NULL;
-
-	addr_t* final_data_addr = data_addr;
-#endif
-
-	/*
-	 * Given the range of pfns, we check that they are really marked as
-	 * occupied in the bitmap.
-	 * If all of them are marked, we unmark them all and proceed. If (at
-	 * least) one is not, we bail out.
-	 *
-	 * XXX: Is that what we want? Maybe too strict.
-	 */
-	//if (bitmap_test_and_unset(start_range_pfn, end_range_pfn)) {
-	if (1) {
-		/* Keep track of the number of pages found */
-		*pfn_read += (end_range_pfn - start_range_pfn + 1);
-
-		/*
-		 * Note: in a typical (small) file, there will be ~16K of
-		 * pages!
-		 */
-
-#ifndef TESTING
-		/*
-		 * This portion is not available (used by syslinux)
-		 * We can ask the kernel to reserve the first 64K of
-		 * the memory (technically for BIOS bugs). See:
-		 *	X86_RESERVE_LOW_64K
-		 *	git: fc38151947477596aa27df6c4306ad6008dc6711
-		 * You need a 2.6.28 kernel or more recent.
-		 */
-		load_addr = __pfn_to_phys(start_range_pfn);
-		while (load_addr < 0x7c00) {
-			(*syslinux_reserved)++;
-			start_range_pfn++; /* Skip this pfn */
-
-			final_data_addr += PAGE_SIZE;
-//XXX Is that right? mega mix data_addr and load_addr.... Find better names.
-		}
-		load_addr = __pfn_to_phys(start_range_pfn);
-
-		/*
-		 * SYSLINUX cannot access memory > 4GB.
-		 * This patch will work with:
-		 *	CONFIG_HIGHMEM4G
-		 * but _NOT_ with CONFIG_HIGHMEM64G
-		 */
-		upper_addr = __pfn_to_phys(end_range_pfn);
-		while (upper_addr > 0x100000000) {
-			(*highmem_unreachable)++;
-			end_range_pfn--; /* Skip this pfn */
-			/*
-			 * Note: this is always false since load_addr is
-			 * uint32_t. But I kept it not to forget...
-			 */
-		}
-		upper_addr = __pfn_to_phys(end_range_pfn);
-
-		/* XXX Free data_addr...final_data_addr and end_range...END */
-
-		/* Keep track of the number of pages actually mapped */
-		nb_of_pfns = (end_range_pfn - start_range_pfn + 1);
-		mapped += nb_of_pfns;
-
-		dsize = PAGE_SIZE * nb_of_pfns;
-		//dprintf("Segment at 0x%08x data 0x%08x len 0x%08x\n",
-		//	  load_addr, data_buffer, dsize);
-
-		/* Memory region available? */
-		if (syslinux_memmap_type(amap, load_addr,
-					 dsize) != SMT_FREE) {
-			//printf("Memory segment at 0x%08x (len"
-			//	 "0x%08x) is unavailable\n",
-			//	 load_addr, size_to_reserve);
-			goto bail;
-		}
-
-		/*
-		 * Mark this region as allocated in the
-		 * available map
-		 */
-		if (syslinux_add_memmap(&amap,
-					load_addr, dsize,
-					SMT_ALLOC))
-			goto bail;
-
-		/*
-		 * Data present region. Create a move entry
-		 * for it.
-		 */
-		if (syslinux_add_movelist(&ml, load_addr,
-					  (addr_t)data_addr,
-					  dsize))
-			goto bail;
-
-#endif /* !TESTING */
-	} else
-		goto bail;
-
-	return 0;
-
-bail:
-#ifndef TESTING
-	syslinux_free_memmap(amap);
-	syslinux_free_memmap(mmap);
-	syslinux_free_movelist(ml);
-#endif /* !TESTING */
 	return -1;
 }

@@ -47,6 +47,7 @@
 
 #define BITOP_WORD(nr)		((nr) / BITS_PER_LONG)
 
+typedef unsigned char u8;
 typedef unsigned int u32;
 
 #undef offsetof

@@ -69,7 +69,7 @@ __inline__ void error(const char *msg)
  **/
 static void boot_image(int len)
 {
-	long pagedir1_size, pagedir2_size;
+	unsigned long pagedir1_size, pagedir2_size;
 
 	if(read_metadata(&pagedir1_size, &pagedir2_size))
 		return;

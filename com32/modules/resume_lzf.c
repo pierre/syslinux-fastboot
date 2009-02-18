@@ -58,6 +58,7 @@
 #include "resume_linux.h"
 
 /**
+ * lzf_decompress - decompress a chunk of data
  * @src:	Pointer to conmpressed data.
  * @slen:	Length of compressed data.
  * @dst:	Where to decompress.

@@ -66,7 +66,7 @@ static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
  * Return:
  *	0 if everything went well, -1 otherwise.
  **/
-int read_metadata(long* pagedir1_size, long* pagedir2_size)
+int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 {
 	struct toi_header* toi_header;
 	struct hibernate_extent_iterate_saved_state toi_writer_posn_save[4];

@@ -55,16 +55,9 @@ toi_image_buffer_posn = (PAGE_SIZE * (toi_image_buffer_posn / PAGE_SIZE + 1));
  * Define TESTING to execute localy the binary
  */
 
-#ifndef TESTING
-/* Syslinux variables */
-struct syslinux_memmap *mmap = NULL, *amap = NULL;
-struct syslinux_rm_regs regs;
-struct syslinux_movelist *ml = NULL;
-
-#else
+#ifdef TESTING
 /* You want ulimit -s unlimited in testing mode */
 # define BUFFER_SIZE 104857609
-
 # define openconsole(a, ...) ((void)0)
 #endif /* TESTING */
 

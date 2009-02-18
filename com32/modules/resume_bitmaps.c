@@ -81,7 +81,8 @@ int load_bitmap(void)
  *	total_pfn - toi_header->pagedir.size
  **/
 int check_number_of_pfn(struct toi_header* toi_header) {
-	long pfn = 0, total_pfn = 0;
+	unsigned long pfn = 0;
+	long total_pfn = 0;
 
 	/* Go through all set bits */
 	memory_bm_position_reset(pageset1);
@@ -132,7 +133,7 @@ void memory_bm_position_reset(struct memory_bitmap *bm)
 unsigned long memory_bm_next_pfn(struct memory_bitmap *bm)
 {
 	struct bm_block *bb;
-	int bit;
+	unsigned int bit;
 
 	bb = bm->iter.block;
 	do {

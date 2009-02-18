@@ -20,6 +20,10 @@
 #include "resume.h"
 #include "resume_trampoline.h"
 
+extern struct syslinux_memmap *mmap, *amap;
+extern struct syslinux_rm_regs regs;
+extern struct syslinux_movelist *ml;
+
 static void trampoline_start(void) {}
 static void trampoline_end(void) {}
 
@@ -46,7 +50,7 @@ static void trampoline_end(void) {}
  *
  * To do this, a blob of code malloc'ed is mapped to 0x7c00.
  **/
-static int setup_trampoline_blob(void)
+int setup_trampoline_blob(void)
 {
 	unsigned long trampoline_size = (void *)&trampoline_end -
 					(void *)&trampoline_start;

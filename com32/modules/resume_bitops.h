@@ -18,6 +18,6 @@ int test_bit(int, volatile const unsigned long*);
 void clear_bit(int, volatile unsigned long*);
 void set_bit(int, volatile unsigned long*);
 void showbits(unsigned long *);
-inline unsigned long __ffs(unsigned long);
+unsigned long __ffs(unsigned long);
 
 #endif /* RESUME_BITOPS_H */

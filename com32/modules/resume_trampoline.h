@@ -14,4 +14,6 @@
 #ifndef _RESUME_TRAMPOLINE_H
 #define _RESUME_TRAMPOLINE_H
 
+int setup_trampoline_blob(void);
+
 #endif /* _RESUME_TRAMPOLINE_H */
