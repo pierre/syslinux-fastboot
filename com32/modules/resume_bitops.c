@@ -14,34 +14,47 @@
 #include <stdio.h>
 
 #include "resume_linux.h"
-
 #include "resume_bitops.h"
 
 /**
  * test_bit - test a bit in an address
- * @bit:	Bit to test.
- * @addr:	Address to test.
+ * @nr:		Bit to test.
+ * @addr:	Address to start counting from.
  **/
-__inline__ int test_bit(int bit, const u32 *addr)
+__inline__ int test_bit(int nr, volatile const unsigned long *addr)
 {
-	return ((1UL << (bit & 31)) & (addr[bit >> 5])) != 0;
+	return 1UL & (addr[BIT_WORD(nr)] >> (nr & (BITS_PER_LONG-1)));
 }
 
 /**
  * clear_bit - unset a bit in an address
  * @bit:	Bit to clear.
  * @addr:	Address to modify.
- *
- * XXX This is not endiannes-portable.
  **/
-__inline__ void clear_bit(int bit, u32 *addr)
+__inline__ void clear_bit(int nr, volatile unsigned long *addr)
 {
-	*addr = *addr & (~( 1 << (bit - 1) ));
+	unsigned long mask = BIT_MASK(nr);
+	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
+
+	*p &= ~mask;
+}
+
+/**
+ * set_bit - set a bit in memory
+ * @nr:		The bit to set.
+ * @addr:	The address to start counting from.
+ **/
+__inline__ void set_bit(int nr, volatile unsigned long *addr)
+{
+	unsigned long mask = BIT_MASK(nr);
+	unsigned long *p = ((unsigned long *)addr) + BIT_WORD(nr);
+
+	*p  |= mask;
 }
 
 /**
  * __ffs - find first bit in word.
- * @word: The word to search
+ * @word:	The word to search.
  *
  * Undefined if no bit exists, so code should check against 0 first.
  */

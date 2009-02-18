@@ -11,6 +11,11 @@
  *
  * ----------------------------------------------------------------------- */
 
+/*
+ * Most of these definitions come from the Linux kernel. See its source for
+ * Copyright information.
+ */
+
 #ifndef RESUME_LINUX_H
 #define RESUME_LINUX_H
 
@@ -18,9 +23,11 @@
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE 4096 /* 1<<12 */
+#define BIT_MASK(nr)	(1UL << ((nr) % BITS_PER_LONG))
 #define BIT_NUM_MASK ((sizeof(unsigned long) << 3) - 1)
 #define PAGE_NUM_MASK (~((1 << (PAGE_SHIFT + 3)) - 1))
 #define UL_NUM_MASK (~(BIT_NUM_MASK | PAGE_NUM_MASK))
+#define BIT_WORD(nr)		((nr) / BITS_PER_LONG)
 
 #ifdef CONFIG_X86_32
 # define BITS_PER_LONG 32
@@ -51,34 +58,63 @@ typedef unsigned int u32;
 
 /**
  * container_of - cast a member of a structure out to the containing structure
- * @ptr:	the pointer to the member.
- * @type:	the type of the container struct this is embedded in.
- * @member:	the name of the member within the struct.
- *
- */
+ * @ptr:	The pointer to the member.
+ * @type:	The type of the container struct this is embedded in.
+ * @member:	The name of the member within the struct.
+ **/
 #define container_of(ptr, type, member) ({			\
 	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
 	(type *)( (char *)__mptr - offsetof(type,member) );})
+
+#define hlist_entry(ptr, type, member) container_of(ptr,type,member)
 
 struct list_head {
 	struct list_head *next, *prev;
 };
 
 /**
+ * list_for_each_entry_continue_reverse - iterate backwards from the given point
+ * @pos:	The type * to use as a loop cursor.
+ * @head:	The head for your list.
+ * @member:	The name of the list_struct within the struct.
+ *
+ * Start to iterate over list of given type backwards, continuing after
+ * the current position.
+ **/
+#define list_for_each_entry_continue_reverse(pos, head, member)		\
+	for (pos = list_entry(pos->member.prev, typeof(*pos), member);	\
+	     &pos->member != (head);					\
+	     pos = list_entry(pos->member.prev, typeof(*pos), member))
+
+/**
+ * list_for_each_entry_continue - continue iteration over list of given type
+ * @pos:	The type * to use as a loop cursor.
+ * @head:	The head for your list.
+ * @member:	The name of the list_struct within the struct.
+ *
+ * Continue to iterate over list of given type, continuing after
+ * the current position.
+ **/
+#define list_for_each_entry_continue(pos, head, member)			\
+	for (pos = list_entry(pos->member.next, typeof(*pos), member);	\
+	     &pos->member != (head);					\
+	     pos = list_entry(pos->member.next, typeof(*pos), member))
+
+/**
  * list_for_each - iterate over a list
- * @pos:	the &struct list_head to use as a loop cursor.
- * @head:	the head for your list.
- */
+ * @pos:	The &struct list_head to use as a loop cursor.
+ * @head:	The head for your list.
+ **/
 #define list_for_each(pos, head) \
 	for (pos = (head)->next; pos != (head); \
 		pos = pos->next)
 
 /**
  * list_for_each_entry - iterate over list of given type
- * @pos:	the type * to use as a loop cursor.
- * @head:	the head for your list.
- * @member:	the name of the list_struct within the struct.
- */
+ * @pos:	The type * to use as a loop cursor.
+ * @head:	The head for your list.
+ * @member:	The name of the list_struct within the struct.
+ **/
 #define list_for_each_entry(pos, head, member)				\
 	for (pos = list_entry((head)->next, typeof(*pos), member);	\
 	     &pos->member != (head);	\
@@ -89,7 +125,7 @@ struct list_head {
  *
  * This is only for internal list manipulation where we know
  * the prev/next entries already!
- */
+ **/
 static inline void __list_add(struct list_head *new,
 			      struct list_head *prev,
 			      struct list_head *next)
@@ -102,12 +138,12 @@ static inline void __list_add(struct list_head *new,
 
 /**
  * list_add - add a new entry
- * @new: new entry to be added
- * @head: list head to add it after
+ * @new:	New entry to be added
+ * @head:	List head to add it after
  *
  * Insert a new entry after the specified head.
  * This is good for implementing stacks.
- */
+ **/
 static inline void list_add(struct list_head *new, struct list_head *head)
 {
 	__list_add(new, head, head->next);
@@ -115,10 +151,10 @@ static inline void list_add(struct list_head *new, struct list_head *head)
 
 /**
  * list_entry - get the struct for this entry
- * @ptr:	the &struct list_head pointer.
- * @type:	the type of the struct this is embedded in.
- * @member:	the name of the list_struct within the struct.
- */
+ * @ptr:	The &struct list_head pointer.
+ * @type:	The type of the struct this is embedded in.
+ * @member:	The name of the list_struct within the struct.
+ **/
 #define list_entry(ptr, type, member) \
 	container_of(ptr, type, member)
 
@@ -134,7 +170,7 @@ struct new_utsname {
 };
 
 /*
- *  Convert a physical address to a Page Frame Number and back
+ * Convert a physical address to a Page Frame Number and back
  */
 #define	__phys_to_pfn(paddr)	((paddr) >> PAGE_SHIFT)
 #define	__pfn_to_phys(pfn)	((pfn) << PAGE_SHIFT)

@@ -24,12 +24,31 @@
 #include "resume.h"
 #include "resume_debug.h"
 #include "resume_restore.h"
+#include "resume_bitmaps.h"
 
-static void add_entry_list(struct data_buffers_list* list,
-			   struct data_buffers_list* cur,
-			   addr_t* data_buffer, unsigned long pfn, int first)
+/**
+ * add_entry_list - add an entry to a data_buffers_list
+ * @list:		Pointer to the beginning of the list.
+ * @cur:		Pointer to the end of the list.
+ * @data_buffer:	Pointer to the data corresponding to @pfn.
+ * @pfn:		pfn to add to the list.
+ *
+ * A data_buffers_list describes a contiguous range of pfns to be restored.
+ * Each entry contains an entry to the corresponding data (uncompressed) that
+ * will need to be restored.
+ *
+ * list always points to the first element (containing start_range_pfn).
+ * cur always point to the last element of the range (containing
+ * prev_dest_pfn).
+ * When adding the first entry, both are NULL pointers. In that case, the list
+ * will be bootstrapped.
+ **/
+static void add_entry_list(struct data_buffers_list** list,
+			   struct data_buffers_list** cur,
+			   addr_t* data_buffer, unsigned long pfn)
 {
-	struct data_buffers_list* new_element = malloc(sizeof(struct data_buffers_list));
+	struct data_buffers_list* new_element =
+				malloc(sizeof(struct data_buffers_list));
 
 	/* Create new element */
 	new_element->data = malloc(PAGE_SIZE);
@@ -38,55 +57,66 @@ static void add_entry_list(struct data_buffers_list* list,
 	memmove(new_element->data, data_buffer, PAGE_SIZE);
 
 	/* First element in a range? */
-	if (first) {
+	if (!*list) {
 		new_element->prev = NULL;
-		list = new_element;
-		cur = list;
+		*list = new_element;
+		*cur = new_element;
 	} else {
-		new_element->prev = list;
-		cur->next = new_element;
-		cur = new_element;
+		new_element->prev = *cur;
+		(*cur)->next = new_element;
+		*cur = new_element;
 	}
-
-	dprintf("\tAdded restore entry: prev = 0x%p, next = 0x%p,"
-		"data = 0x%p\n",
-		 cur->prev,
-		 cur->next,
-		 cur->data);
 }
 
-static void extract_data_from_list(struct data_buffers_list* cur,
-				   addr_t* shuffling_load_addr)
+/**
+ * extract_data_from_list - extract all data from a given list
+ * @orig_list:			List of data_buffers_list to consider.
+ * @shuffling_load_addr:	Beginning of the chunk that will contain the
+ *				data.
+ *
+ * Given a list of contiguous pfn, move all data from the list to a contiguous
+ * chunk of memory.
+ * This chunk will be relocated to its final destination by SYSLINUX.
+ * The memory needs to be allocated before calling this routine.
+ **/
+static void extract_data_from_list(struct data_buffers_list** orig_list,
+				   char* shuffling_load_addr)
 {
 	int i = 0;
+	struct data_buffers_list* list = *orig_list;
 
-	while (cur != NULL) {
-		if (cur->next) {
-			cur = cur->next;
-			memmove(shuffling_load_addr + i, cur->prev->data, PAGE_SIZE);
+	while (list != NULL) {
+		if (list->next) {
+			list = list->next;
+			memmove(shuffling_load_addr + i, list->prev->data,
+				PAGE_SIZE);
 
-			dprintf("PFN %lu: staged data from 0x%p at "
-				"0x%p\n",
-				cur->prev->pfn,
-				cur->prev->data,
+#ifdef METADATA_DEBUG
+			dprintf("PFN %lu: staged data from %p to %p\n",
+				list->prev->pfn,
+				list->prev->data,
 				shuffling_load_addr + i);
+#endif /* METADATA_DEBUG */
 
 			/* Free the previous element */
-			free(cur->prev->data);
-			free(cur->prev);
+			free(list->prev->data);
+			free(list->prev);
 
 			i += PAGE_SIZE;
-		} else { /* Last element in the list */
-			memmove(shuffling_load_addr + i, cur->data, PAGE_SIZE);
+		} else { /* Last element in the list - or only element */
+			memmove(shuffling_load_addr + i, list->data, PAGE_SIZE);
 
+#ifdef METADATA_DEBUG
 			dprintf("PFN %lu: staged data from %p at %p\n",
-				cur->pfn,
-				cur->data,
+				list->pfn,
+				list->data,
 				shuffling_load_addr + i);
+#endif /* METADATA_DEBUG */
 
 			/* Free the last element */
-			free(cur->data);
-			free(cur);
+			free(list->data);
+			free(list);
+			*orig_list = NULL;
 
 			return;
 		}
@@ -95,7 +125,7 @@ static void extract_data_from_list(struct data_buffers_list* cur,
 
 /**
  * skip_pagedir2 - move the image pointer after pagedir2
- * @pagedir2_size:	number of pfns in pagedir2
+ * @pagedir2_size:	Number of pfns in pagedir2.
  *
  * pagedir2 is saved first in the image - and reloaded last by TuxOnIce.
  * We don't care about this data - so we just skip it.
@@ -104,9 +134,8 @@ static void extract_data_from_list(struct data_buffers_list* cur,
  *	toi_image_buffer_posn is moved.
  *	dest_pfn is changed.
  **/
-static void skip_pagedir2(long pagedir2_size)
+static int skip_pagedir2(long pagedir2_size)
 {
-	/* Number of pfns found */
 	long pfns_found = 0;
 	unsigned long* dest_pfn = NULL;
 	unsigned long* data_buffer_size;
@@ -118,7 +147,7 @@ static void skip_pagedir2(long pagedir2_size)
 	} while (!*dest_pfn);
 	goto read_buf_size_pagedir2;
 
-	while (pfns_found <= pagedir2_size) {
+	while (pfns_found < pagedir2_size) {
 		READ_BUFFER(dest_pfn, unsigned long*);
 
 read_buf_size_pagedir2:
@@ -130,8 +159,21 @@ read_buf_size_pagedir2:
 			toi_image_buffer_posn += 1;
 			/* This is not a bug */
 			continue;
+		} else if (!*dest_pfn) {
+			/* This is a bug */
+			printf("BUG: end of pagedir2 reached but still "
+			       "pages to skip.\n");
+			printf("PFN %lu/%lu: %lu [%lu]\n",
+			       pfns_found,
+			       pagedir2_size,
+			       *dest_pfn,
+			       *data_buffer_size);
+			goto bail;
 		} else {
 			pfns_found++;
+			toi_image_buffer_posn += *data_buffer_size +
+						 2 * sizeof(unsigned long);
+
 			/*
 			 * This is noisy: ~15K pfn.
 			 * But useful in development: add the same printk
@@ -142,10 +184,12 @@ read_buf_size_pagedir2:
 				 *dest_pfn,
 				 *data_buffer_size);
 #endif
-			toi_image_buffer_posn += *data_buffer_size +
-						 2 * sizeof(unsigned long);
 		}
 	}
+	return 0;
+
+bail:
+	return -1;
 }
 /**
  * load_memory_map - iterate through the bitmaps to setup SYSLINUX memory map
@@ -162,6 +206,7 @@ int load_memory_map(unsigned long data_len,
 {
 	addr_t* data_buffer = malloc(PAGE_SIZE);
 	addr_t* data_load_addr = NULL;
+	addr_t* shuffling_load_addr;
 
 	unsigned long* data_buffer_size = NULL;
 	unsigned long* dest_pfn = NULL;
@@ -219,7 +264,10 @@ int load_memory_map(unsigned long data_len,
 	 * Restoring program caches is handled via TuxOnIce, in the resume
 	 * code path from the saved kernel.
 	 */
-	skip_pagedir2(pagedir2_size);
+	if (skip_pagedir2(pagedir2_size)) {
+		printf("Error while skipping pagedir2.\n");
+		goto bail;
+	}
 
 	/* pagedir1 is PAGE_SIZE aligned */
 	do {
@@ -228,13 +276,12 @@ int load_memory_map(unsigned long data_len,
 	} while (!*dest_pfn);
 	goto read_buf_size_pagedir1;
 
-	/* Read all pages back */
+	/*
+	 * Read all pages back - this is the main loop to bring back the pages
+	 * in memory
+	 */
 	while (toi_image_buffer_posn < data_len && *pfn_read < pagedir1_size) {
-read_dest_pfn:
 		READ_BUFFER(dest_pfn, unsigned long*);
-
-		//if (!*prev_dest_pfn)
-		//	*start_range_pfn = *dest_pfn;
 
 read_buf_size_pagedir1:
 		/* Read the size of the data */
@@ -245,40 +292,47 @@ read_buf_size_pagedir1:
 						     toi_image_buffer_posn +
 						     sizeof(unsigned long));
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
-			toi_image_buffer_posn += 1;
-			/* This is not a bug */
-			continue;
+			/* This is a bug: wrong buffer size */
+			printf("BUG: Wrong buffer size while reading pagedir1.\n");
+			printf("\tPFN %lu: buffer_size=%lu\n",
+			       *dest_pfn,
+			       *data_buffer_size);
+			goto bail;
 		}
 
 		/*
-		 * The buffer size seem valid. Let's check the pfn in the bitmap
-		 * to be sure.
-		 *
-		 * XXX IMPROVE ME: Test if the pfn is valid and unset me! This
-		 * is to avoid fetching twice the same pfn (shouldn't happen).
+		 * The buffer size seem valid. Advance the pointer and
+		 * check if the pfn is in the bitmap.
 		 */
-		//if (!bitmap_test_all(*dest_pfn))
-		//	//if (*prev_dest_pfn) {
-		//	//	printf("PFN %lu not valid. Saving previous range and starting over.\n", dest_pfn);
-		//	//	goto save_range;
-		//	//}
-		//	//else
-		//		continue;
+		toi_image_buffer_posn += *data_buffer_size +
+					 2 * sizeof(unsigned long);
+		// XXX BROKEN
+		//if (!memory_bm_test_pfn(pageset1, *dest_pfn)) {
+		//	/* That shouldn't happen */
+		//	dprintf("Skipping pfn %lu\n", *dest_pfn);
+		//	continue;
+		//}
 
 		/* Ok, it IS valid */
 		(*pfn_read)++;
+
 #ifdef METADATA_DEBUG
+		/*
+		 * This is useful to debug the parser code. Add a prink() in
+		 * do_rw_loop() and check if the pfns match.
+		 * Debugging the code related to pageset1 is tough. There is no
+		 * (easy) way to check the values since it is always saved last
+		 * and reloaded first (hence always vanishes).
+		 * One solution is to hibernate in a Virtual Machine and connect
+		 * a virtual serial port to a pipe.
+		 */
 		dprintf("%lu [%lu]\n",
 			 *dest_pfn,
 			 *data_buffer_size);
-#endif
-		toi_image_buffer_posn += *data_buffer_size +
-					 2 * sizeof(unsigned long);
+#endif /* METADATA_DEBUG */
 
-		continue; // XXX
 		/* Read the data */
 		READ_BUFFER(data_load_addr, addr_t*);
-		MOVE_FORWARD_BUFFER_POINTER(*data_buffer_size);
 
 		/* Compressed data? */
 		if (*data_buffer_size < PAGE_SIZE) {
@@ -291,37 +345,63 @@ read_buf_size_pagedir1:
 		/*
 		 * At that point, data_buffer points to a page of data. It has
 		 * been decompressed if needed.
+		 * The buffer pointer is already in the right position for the
+		 * next read.
+		 * Below, we only process the data for SYSLINUX.
 		 */
-		continue; //XXX
 
-		/* We bring back to memory continuous chunks of pfns */
-		if (*start_range_pfn == *dest_pfn || *prev_dest_pfn == *dest_pfn - 1) {
+		/*
+		 * We bring back to memory continuous chunks of pfns: this is to
+		 * optimize the shuffle code.
+		 * For a regular file with ~10K pages, this optimization reduces
+		 * the number of chunks to shuffle to ~600.
+		 */
+		if (!*start_range_pfn || *prev_dest_pfn == *dest_pfn - 1) {
+save_dest_pfn:
 			/* We have found another contiguous pfn, carry on */
-			add_entry_list(data_buffers_list, data_buffers_list_cur, data_buffer,
-				       *dest_pfn, *dest_pfn == *start_range_pfn);
+			add_entry_list(&data_buffers_list,
+				       &data_buffers_list_cur,
+				       data_buffer, *dest_pfn);
+
+			/* This happens only when creating a new range */
+			if (!*start_range_pfn)
+				*start_range_pfn = *dest_pfn;
 
 			*prev_dest_pfn = *dest_pfn;
-			goto read_dest_pfn;
+
+			/*
+			 * This happens only if the last pfn is alone (not part
+			 * of a range (see below).
+			 */
+			if (*pfn_read == pagedir1_size) {
+				(*pfn_read)++;
+				goto extract_restore_list;
+			}
 		} else {
+extract_restore_list:
 			/*
 			 * This last pfn is not contiguous with the previous
 			 * ones. We need to load into memory the contiguous chunk
-			 *    *start_range_pfn..*prev_dest_pfn
+			 *	*start_range_pfn..*prev_dest_pfn
 			 * and restart to read_dest_pfn.
 			 */
-save_range:
-			dprintf("PFNs restore range %lu..%lu found.\n",
-				*start_range_pfn, *prev_dest_pfn);
+#ifdef METADATA_DEBUG
+			dprintf("\nPFNs restore range %lu..%lu found. New one "
+				"will start at: %lu\n",
+				*start_range_pfn, *prev_dest_pfn, *dest_pfn);
+			dump_restore_list(data_buffers_list);
+#endif /* METADATA_DEBUG */
 
 			/*
 			 * Create a big chunk of data for later shuffling and
 			 * free the list of data
+			 * This will also free the buffer list.
 			 */
-			addr_t* shuffling_load_addr = malloc((*prev_dest_pfn -
-							*start_range_pfn + 1) *
-							 PAGE_SIZE);
-			extract_data_from_list(data_buffers_list,
-					       shuffling_load_addr);
+			shuffling_load_addr = malloc((*prev_dest_pfn -
+						      *start_range_pfn + 1) *
+						      PAGE_SIZE);
+			extract_data_from_list(&data_buffers_list,
+					       (char *) shuffling_load_addr);
 
 #ifndef TESTING
 			/* XXX Check it is absolute pfns and not zone offsets */
@@ -335,23 +415,39 @@ save_range:
 				goto bail;
 #endif /* !TESTING */
 
-			/* Start looking for a new range */
-			*start_range_pfn = *dest_pfn;
-			*prev_dest_pfn = 0;
-			goto read_dest_pfn;
+			/*
+			 * This only happens if the last pfn wasn't part of a
+			 * range (see above).
+			 */
+			if (*pfn_read > pagedir1_size) {
+				/*
+				 * We added one in *pfn_read to detect it was
+				 * the last entry. We need to remove it for the
+				 * sanity check below
+				 */
+				*pfn_read -= 1;
+				break;
+			}
+			else { /* very likely */
+				/*
+				 * Start looking for a new range after saving the
+				 * current dest_pfn.
+				 */
+				*start_range_pfn = 0;
+				goto save_dest_pfn;
+			}
 		}
 	}
 
-	/*
-	 * Sanity check: have we read all data?
-	 */
+	/* Sanity check: have we read all data? */
 	if (*pfn_read != pagedir1_size) {
 		dprintf("BUG: pfn_read=%lu but pagedir1_size=%lu\n",
 				*pfn_read,
 				pagedir1_size);
-		/* This is really bad - cannot resume */
+		/* This is really bad - we cannot resume */
 		goto bail;
-	}
+	} else
+		dprintf("All data has been read.\n");
 
 #ifndef TESTING
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unrechable\n",
@@ -387,17 +483,20 @@ bail:
  * @end_range_pfn:		maximum pfn to add
  * @data_addr:			address of data to save
  * @pfn_read:			number of valid pfns read so far
- * @syslinux_reserved:		number of pfns skipped so far (occupied by SYSLINUX)
+ * @syslinux_reserved:		number of pfns skipped so far (occupied by
+ *				SYSLINUX)
  * @highmem_unreachable:	number of pfns skipped so far (> 4GB)
  * @mapped:			number of pfns successfully mapped so far
  *
  * The specified range of pfns is added to the SYSLINUX memory map.
  * We expect absolute pfns, not zone offsets.
  *
- * data_addr points to a big chunk af data. Potentially not all of it will be relocated.
+ * data_addr points to a big chunk af data. Potentially not all of it will be
+ * relocated.
  *
  * Side effects:
- * 	pfn_read, syslinux_reserved, highmem_unreachable and mapped are modified, if needed.
+ *	pfn_read, syslinux_reserved, highmem_unreachable and mapped are modified,
+ *	if needed.
  **/
 int memory_map_add(unsigned long start_range_pfn,
 		   unsigned long end_range_pfn,

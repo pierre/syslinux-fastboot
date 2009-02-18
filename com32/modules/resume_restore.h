@@ -14,6 +14,9 @@
 #ifndef _RESUME_RESTORE_H
 #define _RESUME_RESTORE_H
 
+/* Define addr_t */
+#include "resume.h"
+
 struct data_buffers_list {
 	unsigned long pfn;
 	addr_t* data;

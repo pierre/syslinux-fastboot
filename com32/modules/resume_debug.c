@@ -156,7 +156,7 @@ void dump_pagemap()
 	printf("Memory bitmap:\n");
 
 	list_for_each_entry(bb, &pageset1->blocks, hook) {
-		printf("\tMemory extent [%lu - %lu]\n",
+		printf("\tMemory extent [0x%08lx - 0x%08lx]\n",
 					bb->start_pfn,
 					bb->end_pfn);
 	}
@@ -199,11 +199,26 @@ void dump_extent_chain(struct hibernate_extent_chain* chain)
 	printf("\tsize\t\t%d\n", chain->size);
 	printf("\tnum_extents\t%d\n", chain->num_extents);
 }
-#else /* DEBUG */
-# define dump_toi_file_header(a, ...) ((void)0)
-# define dump_toi_header(a, ...) ((void)0)
-# define dump_toi_module_header(a, ...) ((void)0)
-# define dump_pagemap(a, ...) ((void)0)
-# define dump_extent_chain(a, ...) ((void)0)
-# define dump_block_chains(a, ...) ((void)0)
+
+void dump_restore_list(struct data_buffers_list* list)
+{
+	struct data_buffers_list* cur = list;
+	int len = 0;
+
+	printf("Created restore list %p\n", list);
+	while (cur != NULL) {
+#ifdef DEBUG
+		printf("\tRestore entry %p: prev = %p, next = %p, "
+					"pfn = %lu, data = %p\n",
+					 cur,
+					 cur->prev,
+					 cur->next,
+					 cur->pfn,
+					 cur->data);
+#endif /* METADATA_DEBUG */
+		len ++;
+		cur = cur->next;
+	}
+	printf("\tLength: %d\n", len);
+}
 #endif /* !DEBUG */

@@ -52,14 +52,10 @@ int load_bitmap(void)
 		READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 		bb->start_pfn = *pfn;
-		//dprintf("\tZone %d: start pfn\t0x%08lx\n", zone_id,
-		//					   bb->start_pfn);
 
 		READ_BUFFER(pfn, unsigned long*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(unsigned long));
 		bb->end_pfn = *pfn;
-		//dprintf("\tZone %d: end pfn\t\t0x%08lx\n", zone_id,
-		//					   bb->end_pfn);
 
 		/* Load the bitmap itself */
 		bb->data = malloc(PAGE_SIZE);
@@ -76,35 +72,45 @@ int load_bitmap(void)
 
 /**
  * check_number_of_pfn - verify if the bitmap loaded is correct
- * @toi_header:	header of the image (containing the number of pfn expected).
+ * @toi_header:	Header of the image (containing the number of pfn expected).
  *
- * Count all bits in the bitmap loaded from disk. The total number of "1"
+ * Count all pfns in the bitmap loaded from disk. The total number
  * should be equal to toi_file_header->pagedir.size.
  *
  * Return:
- *	total_pfn-toi_header->pagedir.size
+ *	total_pfn - toi_header->pagedir.size
  **/
 int check_number_of_pfn(struct toi_header* toi_header) {
 	long pfn = 0, total_pfn = 0;
 
-	printf("Number of pages to load (pagedir1): %lu\n",
-		toi_header->pagedir.size);
-
+	/* Go through all set bits */
 	memory_bm_position_reset(pageset1);
 	for (pfn = memory_bm_next_pfn(pageset1); pfn != BM_END_OF_MAP;
 		pfn = memory_bm_next_pfn(pageset1)) {
-		//printf("\tpfn: %lu\n", pfn);
 		total_pfn++;
 	}
+
+	dprintf("Number of pages to reload (pagedir1): %lu\n",
+		toi_header->pagedir.size);
 
 	if (total_pfn != toi_header->pagedir.size)
 		printf("BUG: %lu != %lu\n",
 			total_pfn,
 			toi_header->pagedir.size);
 
-	return total_pfn-toi_header->pagedir.size;
+	return total_pfn - toi_header->pagedir.size;
 }
 
+/*
+ * Most of the code below comes from the Linux kernel.
+ */
+
+/**
+ * memory_bm_position_reset - reset the cur and iter positions in @bm
+ * @bm:	Bitmap to reset.
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
 void memory_bm_position_reset(struct memory_bitmap *bm)
 {
 	bm->cur.block = list_entry(bm->blocks.next, struct bm_block, hook);
@@ -120,6 +126,8 @@ void memory_bm_position_reset(struct memory_bitmap *bm)
  *
  * Find the pfn that corresponds to the next set bit in the bitmap. If the
  * pfn cannot be found, BM_END_OF_MAP is returned.
+ *
+ * This is imported from kernel/power/snapshot.c
  **/
 unsigned long memory_bm_next_pfn(struct memory_bitmap *bm)
 {
@@ -141,14 +149,16 @@ unsigned long memory_bm_next_pfn(struct memory_bitmap *bm)
 	memory_bm_position_reset(bm);
 	return BM_END_OF_MAP;
 
- Return_pfn:
+Return_pfn:
 	bm->iter.bit = bit + 1;
 	return bb->start_pfn + bit;
 }
 
-/*
- * Find the next set bit in a memory region.
- */
+/**
+ * find_next_bit - find the next set bit in a memory region
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
 unsigned long find_next_bit(const unsigned long *addr, unsigned long size,
 			    unsigned long offset)
 {
@@ -186,4 +196,129 @@ found_first:
 		return result + size;	/* Nope. */
 found_middle:
 	return result + __ffs(tmp);
+}
+
+/**
+ * memory_bm_find_bit - find the bit in the bitmap @bm that corresponds
+ *                      to given pfn
+ * @bm:		Bitmap to look.
+ * @pfn:	pfn to look for.
+ * @addr:	Pointer to the data block containing the bit for @pfn.
+ * @bit_nr:	Bit corresponding to pfn @pfn in @addr.
+ *
+ * Side effects:
+ *	The cur_zone_bm member of @bm and the cur_block member
+ *	of @bm->cur_zone_bm are updated.
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
+int memory_bm_find_bit(struct memory_bitmap *bm, unsigned long pfn,
+				void **addr, unsigned int *bit_nr)
+{
+	struct bm_block *bb;
+
+	/*
+	 * Check if the pfn corresponds to the current bitmap block and find
+	 * the block where it fits if this is not the case.
+	 */
+	bb = bm->cur.block;
+	if (pfn < bb->start_pfn)
+		list_for_each_entry_continue_reverse(bb, &bm->blocks, hook)
+			if (pfn >= bb->start_pfn)
+				break;
+
+	if (pfn >= bb->end_pfn)
+		list_for_each_entry_continue(bb, &bm->blocks, hook)
+			if (pfn >= bb->start_pfn && pfn < bb->end_pfn)
+				break;
+
+	if (&bb->hook == &bm->blocks)
+		return -1;
+
+	/* The block has been found */
+	bm->cur.block = bb;
+	pfn -= bb->start_pfn;
+	bm->cur.bit = pfn + 1;
+	*bit_nr = pfn;
+	*addr = bb->data;
+	return 0;
+}
+
+/**
+ * memory_bm_test_pfn - test if a pfn is in a bitmap
+ * @bm:		Bitmap to look.
+ * @pfn:	pfn to look for.
+ *
+ * XXX This routine is used in resume_restore to check if the retrieved pfn is
+ * valid. This is not optimized since the iterator is reset each time. It would
+ * be better to copy the pageset1 (e.g. io_map) and try to unset the bit in the
+ * io_map.
+ *
+ * Side Effects:
+ *	cur and iter blocks are reset in @bm.
+ **/
+int memory_bm_test_pfn(struct memory_bitmap *bm, unsigned long pfn)
+{
+	void *addr;
+	unsigned int bit;
+
+	memory_bm_position_reset(bm);
+	return memory_bm_find_bit(bm, pfn, &addr, &bit);
+}
+
+/**
+ * memory_bm_test_bit - test if the bit corresponding to a pfn is set
+ * @bm:		Bitmap to look.
+ * @pfn:	pfn to look for.
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
+int memory_bm_test_bit(struct memory_bitmap *bm, unsigned long pfn)
+{
+	void *addr;
+	unsigned int bit;
+	int error;
+
+	error = memory_bm_find_bit(bm, pfn, &addr, &bit);
+	if (!error)
+		return test_bit(bit, addr);
+	else
+		return 0;
+
+}
+
+/**
+ * memory_bm_set_bit - set the bit corresponding to a pfn
+ * @bm:		Bitmap to look.
+ * @pfn:	pfn to look for.
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
+void memory_bm_set_bit(struct memory_bitmap *bm, unsigned long pfn)
+{
+	void *addr;
+	unsigned int bit;
+	int error;
+
+	error = memory_bm_find_bit(bm, pfn, &addr, &bit);
+	if (!error)
+		set_bit(bit, addr);
+}
+
+/**
+ * memory_bm_clear_bit - unset the bit corresponding to a pfn
+ * @bm:		Bitmap to look.
+ * @pfn:	pfn to look for.
+ *
+ * This is imported from kernel/power/snapshot.c
+ **/
+void memory_bm_clear_bit(struct memory_bitmap *bm, unsigned long pfn)
+{
+	void *addr;
+	unsigned int bit;
+	int error;
+
+	error = memory_bm_find_bit(bm, pfn, &addr, &bit);
+	if (!error)
+		clear_bit(bit, addr);
 }

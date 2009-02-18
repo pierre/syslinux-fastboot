@@ -14,8 +14,9 @@
 #ifndef RESUME_BITOPS_H
 #define RESUME_BITOPS_H
 
-int test_bit(int, const u32*);
-void clear_bit(int, u32*);
+int test_bit(int, volatile const unsigned long*);
+void clear_bit(int, volatile unsigned long*);
+void set_bit(int, volatile unsigned long*);
 void showbits(unsigned long *);
 inline unsigned long __ffs(unsigned long);
 

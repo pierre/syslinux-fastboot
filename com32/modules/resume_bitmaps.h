@@ -14,6 +14,9 @@
 #ifndef RESUME_BITMAPS_H
 #define RESUME_BITMAPS_H
 
+/* Define struct toi_header */
+#include "resume_tuxonice.h"
+
 #define BM_END_OF_MAP	(~0UL)
 
 /* struct linked_page is used to build chains of pages */
@@ -62,5 +65,11 @@ void memory_bm_position_reset(struct memory_bitmap*);
 unsigned long memory_bm_next_pfn(struct memory_bitmap*);
 unsigned long find_next_bit(const unsigned long*, unsigned long,
 			    unsigned long);
+int memory_bm_test_pfn(struct memory_bitmap*, unsigned long);
+int memory_bm_find_bit(struct memory_bitmap*, unsigned long,
+				void **, unsigned int*);
+int memory_bm_test_bit(struct memory_bitmap*, unsigned long);
+void memory_bm_set_bit(struct memory_bitmap*, unsigned long);
+void memory_bm_clear_bit(struct memory_bitmap*, unsigned long);
 
 #endif /* RESUME_BITMAPS_H */
