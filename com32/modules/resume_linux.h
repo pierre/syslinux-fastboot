@@ -173,7 +173,6 @@ struct new_utsname {
 /*
  * Convert a physical address to a Page Frame Number and back
  */
-#define	__phys_to_pfn(paddr)	((paddr) >> PAGE_SHIFT)
 #define	__pfn_to_phys(pfn)	((pfn) << PAGE_SHIFT)
 
 #endif /* RESUME_LINUX_H */

@@ -24,7 +24,9 @@ extern struct syslinux_memmap *mmap, *amap;
 extern struct syslinux_rm_regs regs;
 extern struct syslinux_movelist *ml;
 
-static void trampoline_start(void) {}
+static void trampoline_start(void)
+{
+}
 static void trampoline_end(void) {}
 
 /**
@@ -64,7 +66,8 @@ int setup_trampoline_blob(void)
 	if (syslinux_add_memmap(&amap, 0x7c00, trampoline_size, SMT_ALLOC))
 		return -1;
 
-	if (syslinux_add_movelist(&ml, 0x7c00, (addr_t)boot_blob, trampoline_size))
+	if (syslinux_add_movelist(&ml, 0x7c00, (addr_t)boot_blob,
+							trampoline_size))
 		return -1;
 
 	return 0;

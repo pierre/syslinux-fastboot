@@ -137,12 +137,15 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	       sizeof(toi_writer_posn_save));
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(toi_writer_posn_save));
 
+#ifdef METADATA_DEBUG
+	/* We really don't need those as we have filesystem drivers */
 	dprintf("Disk extents offsets:\n");
 	for (i = 0; i < 4; i++)
 		dprintf("\tPosn %d: Chain %d, extent %d, offset %lu.\n",
 				i, toi_writer_posn_save[i].chain_num,
 				toi_writer_posn_save[i].extent_num,
 				toi_writer_posn_save[i].offset);
+#endif /* METADATA_DEBUG */
 
 	if (!toi_file_header->devinfo_sz)
 		/* Backward compatibility */
@@ -156,11 +159,13 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	READ_BUFFER(chain, struct hibernate_extent_chain*);
 	MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
 
+#ifdef METADATA_DEBUG
 	dump_extent_chain(chain);
 
 	/* This is not needed, as we have filesystem drivers */
 	//toi_load_extent_chain(chain);
 	//dump_block_chains(chain);
+#endif /* METADATA_DEBUG */
 
 	/*
 	 * The header is located after:
@@ -191,14 +196,18 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	READ_BUFFER(toi_module_header, struct toi_module_header*);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_module_header));
 	while (toi_module_header->name[0]) {
+#ifdef METADATA_DEBUG
 		dump_toi_module_header(toi_module_header);
+#endif /* METADATA_DEBUG */
 
 		/* Skip extra info, if needed */
 		READ_BUFFER(module_extra_info, int*);
 		MOVE_FORWARD_BUFFER_POINTER(sizeof(int));
 		if (*module_extra_info) {
+#ifdef METADATA_DEBUG
 			dprintf("\textra_info\t%d\n",
 				*module_extra_info);
+#endif /* METADATA_DEBUG */
 			MOVE_FORWARD_BUFFER_POINTER(*module_extra_info);
 		}
 

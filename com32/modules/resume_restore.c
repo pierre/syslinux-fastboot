@@ -117,13 +117,18 @@ static int memory_map_add(unsigned long start_range_pfn,
 		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
 	}
 
-	/* Free [start_range_pfn...final_start_range_pfn[ */
+	/*
+	 * Free [start_range_pfn...final_start_range_pfn[
+	 * This memory is located between:
+	 *
+	 *	[data_addr...data_location[
+	 */
 	for (i = start_range_pfn; i < final_start_range_pfn; i++)
-		continue; //XXX
+		continue; //XXX TODO
 
 	/* Free [start_range_pfn...final_start_range_pfn[ */
 	for (i = end_range_pfn + 1; i <= final_end_range_pfn; i++)
-		continue; //XXX
+		continue; //XXX TODO
 
 	/* Keep track of the number of pages actually mapped */
 	nb_of_pfns = (final_end_range_pfn - final_start_range_pfn + 1);
@@ -134,16 +139,25 @@ static int memory_map_add(unsigned long start_range_pfn,
 	data_location = data_addr + PAGE_SIZE *
 				(final_start_range_pfn - start_range_pfn);
 
+#ifdef METADATA_DEBUG
 	/* Noisy. In a typical file, there will be ~15K of pages! */
-	//dprintf("Data at 0x%08x (len 0x%08x) will be relocated at 0x%08x\n",
-	//	  data_location, dzise, final_load_addr);
+	dprintf("Data at 0x%08x (len %d) will be relocated at 0x%08x\n",
+		  data_location, dsize, final_load_addr);
+#endif /* METADATA_DEBUG */
 
 	/* Memory region available? */
 	if (syslinux_memmap_type(amap, final_load_addr,
 				 dsize) != SMT_FREE) {
-		printf("BUG: Memory segment at 0x%08x (len"
-		       "0x%08x) is unavailable\n",
-		       final_load_addr, dsize);
+		/*
+		 * See include/syslinux/movebits.h
+		 * If the memory region has no e820 type (error 0 -
+		 * SMT_UNDEFINED), this is probably because there is not enough
+		 * RAM. Typical mistake in a VM with only 256M.
+		 */
+		printf("BUG: Memory segment at 0x%08x (len %d) is "
+		       "unavailable: error=%d\n",
+		       final_load_addr, dsize,
+		       syslinux_memmap_type(amap, final_load_addr, dsize));
 		goto bail;
 	}
 
@@ -395,9 +409,13 @@ int load_memory_map(unsigned long data_len,
 
 	/* In testing mode, you cannot shuffle the memory :) */
 #ifndef TESTING
-	unsigned int* mapped = 0;
-	unsigned int* syslinux_reserved = 0;
-	unsigned int* highmem_unreachable = 0;
+	unsigned int* mapped = malloc(sizeof(unsigned int));
+	unsigned int* syslinux_reserved = malloc(sizeof(unsigned int));
+	unsigned int* highmem_unreachable = malloc(sizeof(unsigned int));
+	*mapped = 0;
+	*syslinux_reserved = 0;
+	*highmem_unreachable = 0;
+
 	struct syslinux_rm_regs regs;
 
 	/* Setup the syslinux memory map */
@@ -616,8 +634,10 @@ extract_restore_list:
 #ifndef TESTING
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unrechable\n",
 		*mapped, *syslinux_reserved, *highmem_unreachable);
-	//dprintf("Final movelist:\n");
-	//syslinux_dump_movelist(stdout, ml);
+#ifdef METADATA_DEBUG
+	dprintf("Final movelist:\n");
+	syslinux_dump_movelist(stdout, ml);
+#endif /* METADATA_DEBUG */
 
 	if (setup_trampoline_blob())
 		goto bail;

@@ -1,0 +1,30 @@
+	How to test resume.c32 using VMware Workstation
+
+Create a blank VM with a small disk and format it as ext3.
+
+Mount the .vmdk to customize it:
+
+	sudo vmware-mount /VMS/TestHDD/TestHDD.vmdk /media/vmdk
+
+Example of extlinux.conf:
+
+	DEFAULT resume.c32 image
+	PROMPT 0
+	NOESCAPE
+	SERIAL 0
+
+Umount it before running the VM:
+
+	sudo vmware-mount -x
+
+Add the serial pipe to your .vmx:
+
+	serial0.present = "TRUE"
+	serial0.startConnected = "TRUE"
+	serial0.fileType = "pipe"
+	serial0.fileName = "/tmp/TestHDDserial"
+	serial0.tryNoRxLoss = "TRUE"
+
+When starting the VM, you can interact with it using:
+
+	socat unix-connect:/tmp/TestHDDserial stdout

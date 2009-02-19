@@ -18,6 +18,8 @@
 #ifndef _RESUME_DEBUG_H
 #define _RESUME_DEBUG_H
 
+#define DEBUG
+
 #ifdef DEBUG
 
 #include "resume_tuxonice.h"
