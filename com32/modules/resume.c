@@ -57,11 +57,6 @@
 #include "resume_trampoline.h"
 #endif /* !TESTING */
 
-__inline__ void error(const char *msg)
-{
-	fputs(msg, stderr);
-}
-
 /**
  * boot_image - main logic to bring back an image from disk
  * @ptr:	Pointer to the file.
@@ -71,8 +66,10 @@ static void boot_image(int len)
 {
 	unsigned long pagedir1_size, pagedir2_size;
 
-	if(read_metadata(&pagedir1_size, &pagedir2_size))
+	if(read_metadata(&pagedir1_size, &pagedir2_size)) {
+		error("Unable to parse metadata.\n");
 		return;
+	}
 
 	/* Will return in protected mode */
 	load_memory_map(len, pagedir1_size, pagedir2_size);

@@ -25,6 +25,11 @@ typedef uint32_t addr_t;
 #include "resume_mm.h"
 #include "resume_linux.h"
 
+static __inline__ void error(const char *msg)
+{
+	fputs(msg, stderr);
+}
+
 /*
  * Global definitions
  */
