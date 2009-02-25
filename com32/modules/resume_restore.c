@@ -18,7 +18,7 @@
 
 #ifndef TESTING
 #include <syslinux/movebits.h>
-#include <syslinux/bootrm.h>
+#include <syslinux/bootpm.h>
 #include "resume_trampoline.h"
 #endif /* !TESTING */
 
@@ -32,15 +32,41 @@
 #ifndef TESTING
 /* Syslinux variables */
 struct syslinux_memmap *mmap = NULL, *amap = NULL;
-struct syslinux_rm_regs regs;
+struct syslinux_pm_regs regs;
 struct syslinux_movelist *ml = NULL;
+extern void (*trampoline) (void);
+
+static int clear_nosave_area(void)
+{
+	/*
+	 * See resume_symbols.c:
+	 *
+	 *	sym_info[8]: __nosave_end
+	 *	sym_info[7]: __nosave_begin
+	 */
+	addr_t dsize = (addr_t) *sym_info[8].value - (addr_t) *sym_info[7].value;
+
+	/* Mark this region as zero in the available map */
+	if (syslinux_add_memmap(&amap,
+				(addr_t) *sym_info[7].value, dsize,
+				SMT_ZERO))
+		goto bail;
+
+	dprintf("Nosave area cleared.\n");
+	return 0;
+
+bail:
+	syslinux_free_memmap(amap);
+	syslinux_free_memmap(mmap);
+	syslinux_free_movelist(ml);
+	return 1;
+}
 
 /**
  * memory_map_add - relocate a range of pfns
  * @start_range_pfn:		minimum pfn to add
  * @end_range_pfn:		maximum pfn to add
  * @data_addr:			address of data to save
- * @pfn_read:			number of valid pfns read so far
  * @syslinux_reserved:		number of pfns skipped so far (occupied by
  *				SYSLINUX)
  * @highmem_unreachable:	number of pfns skipped so far (> 4GB)
@@ -84,6 +110,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 *	git: fc38151947477596aa27df6c4306ad6008dc6711
 	 *
 	 * You need a 2.6.28 kernel or more recent.
+	 * XXX Take into account the trampoline!
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	while (final_load_addr < 0x7c00) {
@@ -125,11 +152,11 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 *	[data_addr...data_location[
 	 */
 	for (i = start_range_pfn; i < final_start_range_pfn; i++)
-		continue; //XXX TODO
+		continue; //TODO
 
 	/* Free [start_range_pfn...final_start_range_pfn[ */
 	for (i = end_range_pfn + 1; i <= final_end_range_pfn; i++)
-		continue; //XXX TODO
+		continue; //TODO
 
 	/* Keep track of the number of pages actually mapped */
 	nb_of_pfns = (final_end_range_pfn - final_start_range_pfn + 1);
@@ -141,9 +168,14 @@ static int memory_map_add(unsigned long start_range_pfn,
 				(final_start_range_pfn - start_range_pfn);
 
 #ifdef METADATA_DEBUG
-	/* Noisy. In a typical file, there will be ~15K of pages! */
-	dprintf("Data at 0x%08x (len %d) will be relocated at 0x%08x\n",
-		  data_location, dsize, final_load_addr);
+	/*
+	 * Noisy. In a typical file, there will be ~15K of pages!
+	 * This output is similar to syslinux_dump_movelist() (in reverse order
+	 * though).
+	 */
+	dprintf("0x%08x 0x%08x 0x%08x %lu-%lu\n",
+		final_load_addr, data_location, dsize,
+		final_start_range_pfn, final_end_range_pfn);
 #endif /* METADATA_DEBUG */
 
 	/* Memory region available? */
@@ -370,12 +402,9 @@ int load_memory_map(unsigned long data_len,
 	unsigned int* data_buffer_size = NULL;
 	unsigned long* dest_pfn = NULL;
 
-	unsigned int* pfn_read = malloc(sizeof(unsigned long));
-	unsigned long* start_range_pfn = malloc(sizeof(unsigned long));
-	unsigned long* prev_dest_pfn = malloc(sizeof(unsigned long));
-	*pfn_read = 0;
-	*start_range_pfn = 0;
-	*prev_dest_pfn = 0;
+	unsigned int pfn_read = 0;
+	unsigned long start_range_pfn = 0;
+	unsigned long prev_dest_pfn = 0;
 
 	/* lzf support */
 	u8* uncompr_tmp = malloc(PAGE_SIZE);
@@ -410,14 +439,9 @@ int load_memory_map(unsigned long data_len,
 
 	/* In testing mode, you cannot shuffle the memory :) */
 #ifndef TESTING
-	unsigned int* mapped = malloc(sizeof(unsigned int));
-	unsigned int* syslinux_reserved = malloc(sizeof(unsigned int));
-	unsigned int* highmem_unreachable = malloc(sizeof(unsigned int));
-	*mapped = 0;
-	*syslinux_reserved = 0;
-	*highmem_unreachable = 0;
-
-	struct syslinux_rm_regs regs;
+	unsigned int mapped = 0;
+	unsigned int syslinux_reserved = 0;
+	unsigned int highmem_unreachable = 0;
 
 	/* Setup the syslinux memory map */
 	mmap = syslinux_memory_map();
@@ -425,6 +449,15 @@ int load_memory_map(unsigned long data_len,
 	if (!mmap || !amap)
 		goto bail;
 #endif /* !TESTING */
+
+	/*
+	 * The trampoline must be setup first to reserve the area.
+	 * XXX return size see above
+	 */
+	if (setup_trampoline_blob()) {
+		printf("BUG: error when setting up the trampoline.\n");
+		goto bail;
+	}
 
 	/*
 	 * Restoring program caches is handled via TuxOnIce, in the resume
@@ -446,7 +479,7 @@ int load_memory_map(unsigned long data_len,
 	 * Read all pages back - this is the main loop to bring back the pages
 	 * in memory
 	 */
-	while (toi_image_buffer_posn < data_len && *pfn_read < pagedir1_size) {
+	while (toi_image_buffer_posn < data_len && pfn_read < pagedir1_size) {
 		READ_BUFFER(dest_pfn, unsigned long*);
 
 read_buf_size_pagedir1:
@@ -480,7 +513,7 @@ read_buf_size_pagedir1:
 		//}
 
 		/* Ok, it IS valid */
-		(*pfn_read)++;
+		pfn_read++;
 
 #ifdef METADATA_DEBUG
 		/*
@@ -522,9 +555,9 @@ read_buf_size_pagedir1:
 					       *dest_pfn, error);
 				goto bail;
 			} else
-				memcpy(data_buffer, uncompr_tmp, PAGE_SIZE);
+				memmove(data_buffer, uncompr_tmp, PAGE_SIZE);
 		} else /* *data_buffer_size == PAGE_SIZE */
-			memcpy(data_buffer, data_load_addr, *data_buffer_size);
+			memmove(data_buffer, data_load_addr, *data_buffer_size);
 
 		/*
 		 * At that point, data_buffer points to a page of data. It has
@@ -540,7 +573,7 @@ read_buf_size_pagedir1:
 		 * For a regular file with ~10K pages, this optimization reduces
 		 * the number of chunks to shuffle to ~600.
 		 */
-		if (!*start_range_pfn || *prev_dest_pfn == *dest_pfn - 1) {
+		if (!start_range_pfn || prev_dest_pfn == *dest_pfn - 1) {
 save_dest_pfn:
 			/* We have found another contiguous pfn, carry on */
 			add_entry_list(&data_buffers_list,
@@ -548,17 +581,17 @@ save_dest_pfn:
 				       data_buffer, *dest_pfn);
 
 			/* This happens only when creating a new range */
-			if (!*start_range_pfn)
-				*start_range_pfn = *dest_pfn;
+			if (!start_range_pfn)
+				start_range_pfn = *dest_pfn;
 
-			*prev_dest_pfn = *dest_pfn;
+			prev_dest_pfn = *dest_pfn;
 
 			/*
 			 * This happens only if the last pfn is alone (not part
 			 * of a range (see below).
 			 */
-			if (*pfn_read == pagedir1_size) {
-				(*pfn_read)++;
+			if (pfn_read == pagedir1_size) {
+				pfn_read++;
 				goto extract_restore_list;
 			}
 		} else {
@@ -566,13 +599,13 @@ extract_restore_list:
 			/*
 			 * This last pfn is not contiguous with the previous
 			 * ones. We need to load into memory the contiguous chunk
-			 *	*start_range_pfn..*prev_dest_pfn
+			 *	start_range_pfn..prev_dest_pfn
 			 * and restart to read_dest_pfn.
 			 */
 #ifdef METADATA_DEBUG
 			dprintf("\nPFNs restore range %lu..%lu found. New one "
 				"will start at: %lu\n",
-				*start_range_pfn, *prev_dest_pfn, *dest_pfn);
+				start_range_pfn, prev_dest_pfn, *dest_pfn);
 			dump_restore_list(data_buffers_list);
 #endif /* METADATA_DEBUG */
 
@@ -581,20 +614,20 @@ extract_restore_list:
 			 * free the list of data
 			 * This will also free the buffer list.
 			 */
-			shuffling_load_addr = malloc((*prev_dest_pfn -
-						      *start_range_pfn + 1) *
+			shuffling_load_addr = malloc((prev_dest_pfn -
+						      start_range_pfn + 1) *
 						      PAGE_SIZE);
 			extract_data_from_list(&data_buffers_list,
 					       (char *) shuffling_load_addr);
 
 #ifndef TESTING
 			/* XXX Check it is absolute pfns and not zone offsets */
-			if(memory_map_add(*start_range_pfn,
-					  *prev_dest_pfn,
+			if(memory_map_add(start_range_pfn,
+					  prev_dest_pfn,
 					  (addr_t) shuffling_load_addr,
-					  syslinux_reserved,
-					  highmem_unreachable,
-					  mapped))
+					  &syslinux_reserved,
+					  &highmem_unreachable,
+					  &mapped))
 				goto bail;
 #endif /* !TESTING */
 
@@ -602,13 +635,13 @@ extract_restore_list:
 			 * This only happens if the last pfn wasn't part of a
 			 * range (see above).
 			 */
-			if (*pfn_read > pagedir1_size) {
+			if (pfn_read > pagedir1_size) {
 				/*
-				 * We added one in *pfn_read to detect it was
+				 * We added one in pfn_read to detect it was
 				 * the last entry. We need to remove it for the
 				 * sanity check below
 				 */
-				*pfn_read -= 1;
+				pfn_read -= 1;
 				break;
 			}
 			else { /* very likely */
@@ -616,49 +649,68 @@ extract_restore_list:
 				 * Start looking for a new range after saving the
 				 * current dest_pfn.
 				 */
-				*start_range_pfn = 0;
+				start_range_pfn = 0;
 				goto save_dest_pfn;
 			}
 		}
 	}
 
 	/* Sanity check: have we read all data? */
-	if (*pfn_read != pagedir1_size) {
+	if (pfn_read != pagedir1_size) {
 		dprintf("BUG: pfn_read=%d but pagedir1_size=%lu\n",
-				*pfn_read,
+				pfn_read,
 				pagedir1_size);
 		/* This is really bad - we cannot resume */
 		goto bail;
 	} else
 		dprintf("All data has been read.\n");
 
+	/* Cleanups */
+	free(toi_image_buffer);
+	free(data_buffer);
+	free(uncompr_tmp);
+
 #ifndef TESTING
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unrechable\n",
-		*mapped, *syslinux_reserved, *highmem_unreachable);
+		mapped, syslinux_reserved, highmem_unreachable);
+
+	if (get_missing_symbols_from_saved_kernel()) {
+		printf("BUG: error while loading symbols.\n");
+		goto bail;
+	}
+
+	/* XXX Needed? */
+	if (clear_nosave_area()) {
+		printf("BUG: error while whiping out the nosave area.\n");
+		goto bail;
+	}
+
+	/* Set up registers */
+	memset(&regs, 0, sizeof regs);
+	//regs.eip = 0x7c00;
+	//regs.esp = 0x7c00;
+
 #ifdef METADATA_DEBUG
+	dprintf("Final memory map:\n");
+	syslinux_dump_memmap(stdout, mmap);
+
+	dprintf("Final available map:\n");
+	syslinux_dump_memmap(stdout, amap);
+
 	dprintf("Final movelist:\n");
 	syslinux_dump_movelist(stdout, ml);
 #endif /* METADATA_DEBUG */
 
-	if (get_missing_symbols_from_saved_kernel())
-		goto bail;
-
-	if (setup_trampoline_blob())
-		goto bail;
-
-	/* Set up registers */
-	memset(&regs, 0, sizeof regs);
-	regs.ip    = 0x7c00;
-	regs.esp.l = 0x7c00;
-
-// XXX Restore other registers? Not here probably.
 	/*
 	 * The memory map is ready. We now jump into protected mode. We will
 	 * then restore the registers and page tables before jumping into the
 	 * kernel.
 	 */
 	fputs("Setting up protected mode...\n", stdout);
-	syslinux_shuffle_boot_rm(ml, mmap, 0, &regs);
+	syslinux_shuffle_boot_pm(ml, mmap, 0, &regs);
+
+	/* If here, not in PM, give up. */
+	asm volatile ("int $0x19");
 #endif
 
 bail:
