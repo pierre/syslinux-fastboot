@@ -75,7 +75,10 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	struct hibernate_extent_chain* chain;
 
 	int* module_extra_info;
-	int header_offset, i;
+	int header_offset;
+#ifdef METADATA_DEBUG
+	int i;
+#endif /* METADATA_DEBUG */
 #ifdef DYN_PAGEFLAGS
 	int size_bitmap;
 #endif /* DYN_PAGEFLAGS */

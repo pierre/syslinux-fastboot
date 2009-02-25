@@ -27,6 +27,7 @@
 #include "resume_restore.h"
 #include "resume_bitmaps.h"
 #include "resume_lzf.h"
+#include "resume_symbols.h"
 
 #ifndef TESTING
 /* Syslinux variables */
@@ -638,6 +639,9 @@ extract_restore_list:
 	dprintf("Final movelist:\n");
 	syslinux_dump_movelist(stdout, ml);
 #endif /* METADATA_DEBUG */
+
+	if (get_missing_symbols_from_saved_kernel())
+		goto bail;
 
 	if (setup_trampoline_blob())
 		goto bail;

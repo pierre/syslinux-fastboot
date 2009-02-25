@@ -10,7 +10,8 @@ Example of extlinux.conf:
 
 	DEFAULT resume.c32 image
 	PROMPT 0
-	NOESCAPE
+	# Avoid infinite loop if unable to resume
+	NOESCAPE 0
 	SERIAL 0
 
 Umount it before running the VM:
