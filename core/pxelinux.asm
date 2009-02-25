@@ -7,7 +7,7 @@
 ;  network booting API.  It is based on the SYSLINUX boot loader for
 ;  MS-DOS floppies.
 ;
-;   Copyright 1994-2008 H. Peter Anvin - All Rights Reserved
+;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
 ;
 ;  This program is free software; you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -262,15 +262,13 @@ _start:
 		push fs
 		push gs
 
+		cld			; Copy upwards
 		xor ax,ax
 		mov ds,ax
 		mov es,ax
 
 		jmp 0:_start1		; Canonicalize address
 _start1:
-		mov bp,sp
-		les bx,[bp+48]		; ES:BX -> !PXE or PXENV+ structure
-
 		; That is all pushed onto the PXE stack.  Save the pointer
 		; to it and switch to an internal stack.
 		mov [InitStack],sp
@@ -283,20 +281,15 @@ _start1:
 		mov [BaseStack+4],ss
 %endif
 
-		cli			; Paranoia
 		lss esp,[BaseStack]
-
 		sti			; Stack set up and ready
-		cld			; Copy upwards
+
 
 ;
 ; Initialize screen (if we're using one)
 ;
-		push es			; Save ES -> PXE entry structure
-		push ds
-		pop es			; ES <- DS
 %include "init.inc"
-		pop es			; Restore ES -> PXE entry structure
+
 ;
 ; Tell the user we got this far
 ;
@@ -316,15 +309,33 @@ _start1:
 		mov word [APIVer],0201h
 
 ;
-; Now we need to find the !PXE structure.  It's *supposed* to be pointed
-; to by SS:[SP+4], but support INT 1Ah, AX=5650h method as well.
-; FIX: ES:BX should point to the PXENV+ structure on entry as well.
-; We should make that the second test, and not trash ES:BX...
+; Now we need to find the !PXE structure.
+; We search for the following, in order:
 ;
-		cmp dword [es:bx], '!PXE'
+; a. !PXE structure as SS:[SP+4]
+; b. PXENV+ structure at [ES:BX]
+; c. INT 1Ah AX=5650h -> PXENV+
+; d. Search memory for !PXE
+; e. Search memory for PXENV+
+;
+; If we find a PXENV+ structure, we try to find a !PXE structure from
+; it if the API version is 2.1 or later.
+;
+		; Plan A: !PXE structure as SS:[SP+4]
+		lgs bp,[InitStack]	; GS:BP -> original stack
+		les bx,[gs:bp+48]
+		call is_pxe
 		je have_pxe
 
-		; Uh-oh, not there... try plan B
+		; Plan B: PXENV+ structure at [ES:BX]
+		inc byte [plan]
+		mov bx,[gs:bp+24]	; Original BX
+		mov es,[gs:bp+4]	; Original ES
+		call is_pxenv
+		je have_pxenv
+
+		; Plan C: PXENV+ structure via INT 1Ah AX=5650h
+		inc byte [plan]
 		mov ax, 5650h
 %if USE_PXE_PROVIDED_STACK == 0
 		lss sp,[InitStack]
@@ -334,24 +345,27 @@ _start1:
 		lss esp,[BaseStack]
 %endif
 
-		jc no_pxe
+		jc no_int1a
 		cmp ax,564Eh
-		jne no_pxe
+		jne no_int1a
 
-		; Okay, that gave us the PXENV+ structure, find !PXE
-		; structure from that (if available)
-		cmp dword [es:bx], 'PXEN'
-		jne no_pxe
-		cmp word [es:bx+4], 'V+'
+		call is_pxenv
 		je have_pxenv
 
-		; Nothing there either.  Last-ditch: scan memory
+no_int1a:
+		; Plan D: !PXE memory scan
+		inc byte [plan]
 		call memory_scan_for_pxe_struct		; !PXE scan
-		jnc have_pxe
-		call memory_scan_for_pxenv_struct	; PXENV+ scan
-		jnc have_pxenv
+		je have_pxe
 
-no_pxe:		mov si,err_nopxe
+		; Plan E: PXENV+ memory scan
+		inc byte [plan]
+		call memory_scan_for_pxenv_struct	; PXENV+ scan
+		je have_pxenv
+
+		; Found nothing at all!!
+no_pxe:
+		mov si,err_nopxe
 		call writestr_early
 		jmp kaboom
 
@@ -371,20 +385,20 @@ have_pxenv:
 
 		cmp ax,0201h			; API version 2.1 or higher
 		jb old_api
-		mov si,bx
-		mov ax,es
+		cmp byte [es:bx+8],2Ch		; Space for !PXE pointer?
+		jb .pxescan
 		les bx,[es:bx+28h]		; !PXE structure pointer
-		cmp dword [es:bx],'!PXE'
+		call is_pxe
 		je have_pxe
 
 		; Nope, !PXE structure missing despite API 2.1+, or at least
 		; the pointer is missing.  Do a last-ditch attempt to find it.
+.pxescan:
 		call memory_scan_for_pxe_struct
-		jnc have_pxe
+		je have_pxe
 
 		; Otherwise, no dice, use PXENV+ structure
-		mov bx,si
-		mov es,ax
+		les bx,[StrucPtr]
 
 old_api:	; Need to use a PXENV+ structure
 		mov si,using_pxenv_msg
@@ -438,7 +452,8 @@ old_api:	; Need to use a PXENV+ structure
 		call writechr
 		mov ax,[PXEEntry]
 		call writehex4
-		call crlf
+		mov si,viaplan_msg
+		call writestr_early
 		jmp have_entrypoint
 
 have_pxe:
@@ -460,7 +475,7 @@ have_pxe:
 		call crlf
 		mov si,undi_code_msg
 		call writestr_early
-		mov ax,[es:bx+32h]
+		mov eax,[es:bx+32h]
 		call writehex8
 		call crlf
 		mov si,undi_code_len_msg
@@ -492,7 +507,8 @@ have_pxe:
 		call writechr
 		mov ax,[PXEEntry]
 		call writehex4
-		call crlf
+		mov si,viaplan_msg
+		call writestr_early
 
 have_entrypoint:
 		push cs
@@ -509,6 +525,9 @@ have_entrypoint:
 ; packet (query info 1).
 ;
 query_bootp_1:
+		mov si,get_packet_msg
+		call writestr_early
+
 		mov dl,1
 		call pxe_get_cached_info
 		call parse_dhcp
@@ -558,9 +577,11 @@ query_bootp_2:
 ; Now, get the boot file and other info.  This lives in the CACHED_REPLY
 ; packet (query info 3).
 ;
+query_bootp_3:
 		mov dl,3
 		call pxe_get_cached_info
 		call parse_dhcp			; Parse DHCP packet
+		call crlf
 
 ;
 ; Generate the bootif string, and the hardware-based config string.
@@ -703,6 +724,13 @@ prefix:		test byte [DHCPMagic], 04h	; Did we get a path prefix option
 		mov si,PathPrefix
 		call writestr_early
 		call crlf
+
+		; Set CurrentDirName
+		push di
+		mov si,PathPrefix
+		mov di,CurrentDirName
+		call strcpy
+		pop di
 
 ;
 ; Load configuration file
@@ -902,115 +930,83 @@ kaboom:
 
 ;
 ; memory_scan_for_pxe_struct:
+; memory_scan_for_pxenv_struct:
 ;
-;	If none of the standard methods find the !PXE structure, look for it
-;	by scanning memory.
+;	If none of the standard methods find the !PXE/PXENV+ structure,
+;	look for it by scanning memory.
 ;
 ;	On exit, if found:
-;		CF = 0, ES:BX -> !PXE structure
-;	Otherwise CF = 1, all registers saved
+;		ZF = 1, ES:BX -> !PXE structure
+;	Otherwise:
+;		ZF = 0
+;
+;	Assumes DS == CS
+;	Clobbers AX, BX, CX, DX, SI, ES
 ;
 memory_scan_for_pxe_struct:
-		push ds
-		pusha
-		mov ax,cs
-		mov ds,ax
-		mov si,trymempxe_msg
-		call writestr_early
+		mov dx,is_pxe
 		mov ax,[BIOS_fbm]	; Starting segment
 		shl ax,(10-4)		; Kilobytes -> paragraphs
-;		mov ax,01000h		; Start to look here
+		jmp memory_scan_common
+
+memory_scan_for_pxenv_struct:
+		mov ax,1000h		; Starting segment
+		mov dx,is_pxenv
+		; fall through
+
+memory_scan_common:
 		dec ax			; To skip inc ax
 .mismatch:
 		inc ax
-		cmp ax,0A000h		; End of memory
-		jae .not_found
-		call writehex4
-		mov si,fourbs_msg
-		call writestr_early
+		cmp ax,0A000h-1		; End of memory
+		ja .not_found		; ZF = 0 on not found
 		mov es,ax
-		mov edx,[es:0]
-		cmp edx,'!PXE'
-		jne .mismatch
-		movzx cx,byte [es:4]	; Length of structure
-		cmp cl,08h		; Minimum length
-		jb .mismatch
-		push ax
-		xor ax,ax
-		xor si,si
-.checksum:	es lodsb
-		add ah,al
-		loop .checksum
-		pop ax
-		jnz .mismatch		; Checksum must == 0
-.found:		mov bp,sp
 		xor bx,bx
-		mov [bp+8],bx		; Save BX into stack frame (will be == 0)
-		mov ax,es
-		call writehex4
-		call crlf
-		popa
-		pop ds
-		clc
-		ret
-.not_found:	mov si,notfound_msg
-		call writestr_early
-		popa
-		pop ds
-		stc
+		call dx
+		jne .mismatch
+.not_found:
 		ret
 
 ;
-; memory_scan_for_pxenv_struct:
+; is_pxe:
+;	Validity check on possible !PXE structure in ES:BX
+; is_pxenv:
+;	Validity check on possible PXENV+ structure in ES:BX
 ;
-;	If none of the standard methods find the PXENV+ structure, look for it
-;	by scanning memory.
+;	Return ZF = 1 on success
 ;
-;	On exit, if found:
-;		CF = 0, ES:BX -> PXENV+ structure
-;	Otherwise CF = 1, all registers saved
+;	Clobbers CX and SI
 ;
-memory_scan_for_pxenv_struct:
-		pusha
-		mov si,trymempxenv_msg
-		call writestr_early
-;		mov ax,[BIOS_fbm]	; Starting segment
-;		shl ax,(10-4)		; Kilobytes -> paragraphs
-		mov ax,01000h		; Start to look here
-		dec ax			; To skip inc ax
-.mismatch:
-		inc ax
-		cmp ax,0A000h		; End of memory
-		jae .not_found
-		mov es,ax
-		mov edx,[es:0]
-		cmp edx,'PXEN'
-		jne .mismatch
-		mov dx,[es:4]
-		cmp dx,'V+'
-		jne .mismatch
-		movzx cx,byte [es:8]	; Length of structure
-		cmp cl,26h		; Minimum length
-		jb .mismatch
+is_struc:
+.pxe:
+		cmp dword [es:bx],'!PXE'
+		jne .bad
+		movzx cx,byte [es:bx+4]
+		cmp cx,58h
+		jae .checksum
+		ret
+.pxenv:
+		cmp dword [es:bx],'PXEN'
+		jne .bad
+		cmp word [es:bx+4],'V+'
+		jne .bad
+		movzx cx,[es:bx+8]
+		cmp cx,28h
+		jb .bad
+.checksum:
+		push ax
+		mov si,bx
 		xor ax,ax
-		xor si,si
-.checksum:	es lodsb
+.loop:
+		es lodsb
 		add ah,al
-		loop .checksum
-		and ah,ah
-		jnz .mismatch		; Checksum must == 0
-.found:		mov bp,sp
-		mov [bp+8],bx		; Save BX into stack frame
-		mov ax,bx
-		call writehex4
-		call crlf
-		clc
+		loop .loop
+		pop ax
+.bad:
 		ret
-.not_found:	mov si,notfound_msg
-		call writestr_early
-		popad
-		stc
-		ret
+		
+is_pxe		equ is_struc.pxe
+is_pxenv	equ is_struc.pxenv
 
 ;
 ; close_file:
@@ -2254,11 +2250,10 @@ xchexbytes:
 ;
 pxe_get_cached_info:
 		pushad
-		mov si,get_packet_msg
-		call writestr_early
+		mov al,' '
+		call writechr
 		mov al,dl
 		call writehex2
-		call crlf
 		mov di,pxe_bootp_query_pkt
 		push di
 		xor ax,ax
@@ -2291,7 +2286,7 @@ pxe_get_cached_info:
 		jmp kaboom
 
 		section .data
-get_packet_msg	db 'Getting cached packet ', 0
+get_packet_msg	db 'Getting cached packet', 0
 
 		section .text
 ;
@@ -2711,8 +2706,10 @@ err_damage	db 'TFTP server sent an incomprehesible reply', CR, LF, 0
 found_pxenv	db 'Found PXENV+ structure', CR, LF, 0
 using_pxenv_msg db 'Old PXE API detected, using PXENV+ structure', CR, LF, 0
 apiver_str	db 'PXE API version is ',0
-pxeentry_msg	db 'PXE entry point found (we hope) at ', 0
-pxenventry_msg	db 'PXENV entry point found (we hope) at ', 0
+pxeentry_msg	db '!PXE entry point found (we hope) at ', 0
+pxenventry_msg	db 'PXENV+ entry point found (we hope) at ', 0
+viaplan_msg	db ' via plan '
+plan		db 'A', CR, LF, 0
 trymempxe_msg	db 'Scanning memory for !PXE structure... ', 0
 trymempxenv_msg	db 'Scanning memory for PXENV+ structure... ', 0
 undi_data_msg	  db 'UNDI data segment at:   ',0
@@ -2725,7 +2722,6 @@ myipaddr_msg	db 'My IP address seems to be ',0
 tftpprefix_msg	db 'TFTP prefix: ', 0
 localboot_msg	db 'Booting from local disk...', CR, LF, 0
 trying_msg	db 'Trying to load: ', 0
-fourbs_msg	db BS, BS, BS, BS, 0
 default_str	db 'default', 0
 syslinux_banner	db CR, LF, 'PXELINUX ', VERSION_STR, ' ', DATE_STR, ' ', 0
 cfgprefix	db 'pxelinux.cfg/'		; No final null!
