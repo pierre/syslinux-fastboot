@@ -663,7 +663,7 @@ extract_restore_list:
 		/* This is really bad - we cannot resume */
 		goto bail;
 	} else
-		dprintf("All data has been read.\n");
+		dprintf("All data have been read.\n");
 
 	/* Cleanups */
 	free(toi_image_buffer);
@@ -671,7 +671,7 @@ extract_restore_list:
 	free(uncompr_tmp);
 
 #ifndef TESTING
-	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unrechable\n",
+	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unreachable\n",
 		mapped, syslinux_reserved, highmem_unreachable);
 
 	if (get_missing_symbols_from_saved_kernel()) {
@@ -711,7 +711,7 @@ extract_restore_list:
 
 	/* If here, not in PM, give up. */
 	asm volatile ("int $0x19");
-#endif
+#endif /* !TESTING */
 
 bail:
 	return -1;

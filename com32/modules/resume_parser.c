@@ -36,7 +36,7 @@ static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
 	for (i = 0; i < chain->num_extents; i++) {
 		this = malloc(sizeof(struct hibernate_extent));
 		if (!this) {
-			printf("Failed to allocate a new extent.\n");
+			error("Failed to allocate a new extent.\n");
 			return -1;
 		}
 		this->next = NULL;
@@ -84,11 +84,11 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 #endif /* DYN_PAGEFLAGS */
 
 	READ_BUFFER(toi_file_header, struct toi_file_header*);
-
 	/* We only attempt to resume if the magic binary signature is found */
-	if (!parse_signature(toi_file_header))
-		//error("Invalid TuxOnIce file.\n");
+	if (!parse_signature(toi_file_header)) {
+		error("Invalid TuxOnIce file.\n");
 		goto bail;
+	}
 
 	dprintf("TuxOnIce: binary signature found.\n");
 
