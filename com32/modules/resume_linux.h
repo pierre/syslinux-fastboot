@@ -21,20 +21,6 @@
 
 #define CONFIG_X86_32
 
-/* See arch/x86/include/asm/segment.h */
-#define GDT_ENTRY_BOOT_CS		2
-#define GDT_ENTRY_BOOT_DS		(GDT_ENTRY_BOOT_CS + 1)
-#define __BOOT_DS			(GDT_ENTRY_BOOT_DS * 8)
-#define __BOOT_CS			(GDT_ENTRY_BOOT_CS * 8)
-#define GDT_ENTRY_KERNEL_BASE		12
-#define GDT_ENTRY_KERNEL_CS		(GDT_ENTRY_KERNEL_BASE + 0)
-#define GDT_ENTRY_KERNEL_DS		(GDT_ENTRY_KERNEL_BASE + 1)
-#define GDT_ENTRY_DEFAULT_USER_DS	15
-#define __KERNEL_CS			(GDT_ENTRY_KERNEL_CS * 8)
-#define __KERNEL_DS			(GDT_ENTRY_KERNEL_DS * 8)
-#define __USER_DS			(GDT_ENTRY_DEFAULT_USER_DS* 8 + 3)
-#define __USER_CS			(GDT_ENTRY_DEFAULT_USER_CS* 8 + 3)
-
 #define PAGE_SHIFT 12
 #define PAGE_SIZE 4096 /* 1<<12 */
 #define BIT_MASK(nr)	(1UL << ((nr) % BITS_PER_LONG))

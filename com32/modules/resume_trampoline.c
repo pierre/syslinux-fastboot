@@ -18,16 +18,17 @@
 #include <syslinux/bootrm.h>
 
 #include "resume.h"
+#include "resume_linux.h"
+#include "resume_debug.h"
+#include "resume_symbols.h"
 #include "resume_trampoline.h"
 
 extern struct syslinux_memmap *mmap, *amap;
-extern struct syslinux_rm_regs regs;
 extern struct syslinux_movelist *ml;
 
-static void trampoline_start(void)
-{
-}
-static void trampoline_end(void) {}
+/* Defined in resume_trampoline_asm.S */
+extern int trampoline_start(void);
+extern const void trampoline_end;
 
 /**
  * setup_trampoline_blob - prepare the code to reload the CPU saved state
@@ -42,7 +43,7 @@ static void trampoline_end(void) {}
  *
  * Hence, some registers and segment registers can be set via
  *
- *	struct syslinux_rm_regs;
+ *	struct syslinux_pm_regs;
  *
  * These registers are cs (code segment), ds (data segment), and ss (stack
  * segment).
@@ -54,21 +55,20 @@ static void trampoline_end(void) {}
  **/
 int setup_trampoline_blob(void)
 {
-	unsigned long trampoline_size = (void *)&trampoline_end -
-					(void *)&trampoline_start;
+	size_t trampoline_size = (void *)&trampoline_end -
+				 (void *)&trampoline_start;
 
-	unsigned long* boot_blob = malloc(trampoline_size);
-	if (!boot_blob)
+	if (syslinux_memmap_type(amap, 0x7c00, trampoline_size) != SMT_FREE)
 		return -1;
-
-	memmove(boot_blob, trampoline_start, trampoline_size);
 
 	if (syslinux_add_memmap(&amap, 0x7c00, trampoline_size, SMT_ALLOC))
 		return -1;
 
-	if (syslinux_add_movelist(&ml, 0x7c00, (addr_t)boot_blob,
+	if (syslinux_add_movelist(&ml, 0x7c00, (addr_t) trampoline_start,
 							trampoline_size))
 		return -1;
 
+	dprintf("Trampoline: 0x%08x (size %#8.8x)\n", (addr_t) trampoline_start,
+							   trampoline_size);
 	return 0;
 }

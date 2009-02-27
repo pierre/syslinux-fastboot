@@ -82,6 +82,8 @@ bail:
  *	syslinux_reserved, highmem_unreachable and mapped are modified,
  *	if needed.
  **/
+// XXX
+int count = 1; /* trampoline */
 static int memory_map_add(unsigned long start_range_pfn,
 			  unsigned long end_range_pfn,
 			  addr_t data_addr,
@@ -100,6 +102,11 @@ static int memory_map_add(unsigned long start_range_pfn,
 	addr_t final_upper_addr;
 	/* Size of the data to shuffle */
 	addr_t dsize;
+
+	// XXX
+	count++;
+	if (count > 681)
+		return 0;
 
 	/*
 	 * This portion is not available (used by syslinux)
@@ -163,7 +170,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 	(*mapped) += nb_of_pfns;
 
 	dsize = PAGE_SIZE * nb_of_pfns;
-	// XXX Check if right (char*)
+	// XXX Check if right (char*?)
 	data_location = data_addr + PAGE_SIZE *
 				(final_start_range_pfn - start_range_pfn);
 
@@ -687,8 +694,7 @@ extract_restore_list:
 
 	/* Set up registers */
 	memset(&regs, 0, sizeof regs);
-	//regs.eip = 0x7c00;
-	//regs.esp = 0x7c00;
+	regs.eip = 0x7c00;
 
 #ifdef METADATA_DEBUG
 	dprintf("Final memory map:\n");

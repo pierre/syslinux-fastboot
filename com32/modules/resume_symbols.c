@@ -147,6 +147,7 @@ static int get_kernel_symbl(void)
 int get_missing_symbols_from_saved_kernel(void)
 {
 	int symbols_to_match = 9;
+	struct saved_context* state;
 
 	if (load_symbols_table())
 		return 1;
@@ -155,6 +156,15 @@ int get_missing_symbols_from_saved_kernel(void)
 		if (get_kernel_symbl())
 			symbols_to_match--;
 	}
+
+	/* Setup global variables for the trampoline */
+	state = (struct saved_context*) saved_context_state;
+	saved_idt_address = state->idt.address;
+	saved_gdt_address = state->gdt.address;
+	saved_cr4 = state->cr4;
+	saved_cr3 = state->cr3;
+	saved_cr2 = state->cr2;
+	saved_cr0 = state->cr0;
 
 	/*
 	 * Don't bother free'ing the memory, we are about to rewrite the Memory
