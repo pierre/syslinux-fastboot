@@ -31,7 +31,7 @@
 #define STACK_SIZE			(8 * 1024)
 
 /* Physical address */
-#define pa(X) ((X)-trampoline_start+0x7c00)
+#define pa(X) ((X)-trampoline_start+0x8000)
 
 .global trampoline_start
 .global trampoline_end
@@ -50,7 +50,7 @@
  * WARNING!
  *
  * All symbols compiled in the com32 modules are put in a random place. Since
- * we relocate the trampoline starting at 0x7c00, when accessing these symbols
+ * we relocate the trampoline starting at 0x8000, when accessing these symbols
  * you need to use the pa (physical address) macro.
  */
 reloc_start:
@@ -73,6 +73,7 @@ startup_32:
 	movl %eax, %es
 	movl %eax, %fs
 	movl %eax, %gs
+	movl %eax, %ss
 
 	// XXX SMP: turn on paging options (PSE,PAE,..) - cr4
 
@@ -110,7 +111,7 @@ startup_32:
 
 	/*
 	 * %edi now points to the first safe page (end of our page tables),
-	 * i.e. 0x7c00 + 0x4000 = 0xbc00
+	 * i.e. 0x8000 + 0x4000 = 0xc000
 	 */
 
 	/* Load CR3 with the address of the page directory */
@@ -129,15 +130,10 @@ startup_32:
 	 * eip.
 	 */
 	movl %eax,%cr0
-	jmp 1f					# Flush the prefetch-queue
-1:
-	movl $1f,%eax
-	jmp *%eax				# Make sure eip is relocated
+	ljmp $(__KERNEL_CS), $pa(1f)
 1:
 	/* Set up the stack pointer */
-	lss pa(stack_start),%esp
-
-	hlt
+	movl pa(stack_start),%esp
 
 	// XXX Wakeup other CPUs
 /*
@@ -271,18 +267,18 @@ gdt:
  * This is initialized to create an identity-mapping at 0-4M (for bootup
  * purposes).
  *
- * swapper_pg_dir is at 0x8c00.
+ * swapper_pg_dir is at 0x9000.
  */
 .org 0x1000
 swapper_pg_dir:
-	.long 0x00009c07			# We only map 1024 pages
+	.long 0x0000a007			# We only map 1024 pages
 	.fill 1023,4,0
 
 /*
  * The page tables are initialized to only 4MB here - the final page
  * tables will be restored from the image.
  *
- * pg0 is at 0x9c00.
+ * pg0 is at 0xa000.
  */
 .org 0x2000
 pg0:

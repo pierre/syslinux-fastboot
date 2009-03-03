@@ -58,13 +58,13 @@ int setup_trampoline_blob(void)
 	size_t trampoline_size = (void *)&trampoline_end -
 				 (void *)&trampoline_start;
 
-	if (syslinux_memmap_type(amap, 0x7c00, trampoline_size) != SMT_FREE)
+	if (syslinux_memmap_type(amap, 0x8000, trampoline_size) != SMT_FREE)
 		return -1;
 
-	if (syslinux_add_memmap(&amap, 0x7c00, trampoline_size, SMT_ALLOC))
+	if (syslinux_add_memmap(&amap, 0x8000, trampoline_size, SMT_ALLOC))
 		return -1;
 
-	if (syslinux_add_movelist(&ml, 0x7c00, (addr_t) trampoline_start,
+	if (syslinux_add_movelist(&ml, 0x8000, (addr_t) trampoline_start,
 							trampoline_size))
 		return -1;
 

@@ -694,7 +694,7 @@ extract_restore_list:
 
 	/* Set up registers */
 	memset(&regs, 0, sizeof regs);
-	regs.eip = 0x7c00;
+	regs.eip = 0x8000;
 
 #ifdef METADATA_DEBUG
 	dprintf("Final memory map:\n");
