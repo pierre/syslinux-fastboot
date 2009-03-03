@@ -28,6 +28,9 @@ static unsigned long symbols_table_posn;
 /* Size of System.map */
 static size_t data_len;
 
+/* See resume_trampoline_asm.S */
+extern unsigned long swapper_pg_dir;
+
 struct swsusp_symbl_info sym_info[] =
 {
     {"saved_context_ebx",       &saved_context_ebx},
@@ -37,6 +40,7 @@ struct swsusp_symbl_info sym_info[] =
     {"saved_context_edi",       &saved_context_edi},
     {"saved_context",           &saved_context_state},
     {"saved_context_eflags",    &saved_context_eflags},
+    {"swapper_pg_dir",          &swapper_pg_dir},
     {"__nosave_begin",          &saved_context_nosave_begin},
     {"__nosave_end",            &saved_context_nosave_end},
     {"\0", 0},
@@ -146,7 +150,7 @@ static int get_kernel_symbl(void)
  **/
 int get_missing_symbols_from_saved_kernel(void)
 {
-	int symbols_to_match = 9;
+	int symbols_to_match = 10;
 	struct saved_context* state;
 
 	if (load_symbols_table())
@@ -160,7 +164,6 @@ int get_missing_symbols_from_saved_kernel(void)
 	/* Setup global variables for the trampoline */
 	state = (struct saved_context*) saved_context_state;
 	saved_idt_address = state->idt.address;
-	saved_gdt_address = state->gdt.address;
 	saved_cr4 = state->cr4;
 	saved_cr3 = state->cr3;
 	saved_cr2 = state->cr2;

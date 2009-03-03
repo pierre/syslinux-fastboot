@@ -35,7 +35,6 @@
 
 .global trampoline_start
 .global trampoline_end
-.global saved_gdt_address
 .global saved_context_esp
 .global saved_context_ebp
 .global saved_context_ebx
@@ -96,7 +95,7 @@ startup_32:
  */
 	/*
 	 * Page tables are stored starting at pg0, at 0x9c00:
-	 * pa(swapper_pg_dir) + 0x1000 (1024 * 4 = 4K)
+	 * pa(boot_swapper_pg_dir) + 0x1000 (1024 * 4 = 4K)
 	 */
 	movl $pa(pg0),%edi
 	movl $007,%eax				# 0x007 = PRESENT+RW+USER
@@ -115,7 +114,7 @@ startup_32:
 	 */
 
 	/* Load CR3 with the address of the page directory */
-	movl $pa(swapper_pg_dir),%eax
+	movl $pa(boot_swapper_pg_dir),%eax
 	movl %eax,%cr3
 
 	/* Set the paging bit of CR0 */
@@ -136,22 +135,24 @@ startup_32:
 	movl pa(stack_start),%esp
 
 	// XXX Wakeup other CPUs
-/*
- * All the work before was to bootstrap the system. Now, we are ready to jump
- * into the old kernel
- */
-	/*
-	 * Now restore the descriptor tables to their proper values
-	 * This will recover CS
-	 */
 	// XXX lidt?
-	lgdt (saved_gdt_address)
 
-	ljmp $(__KERNEL_CS), $pa(jmp_gdt)
-
-jmp_gdt:
 	/*
-	 * Reload the segment registers (gdt has been changed)
+	 * All the work before was to bootstrap the system. Now, we are ready
+	 * to jump into the old kernel.
+	 *
+	 * See arch/x86/power/hibernate_asm_*.S
+	 *
+	 * Now restore the page directory to its proper value.
+	 */
+	movl pa(swapper_pg_dir),%ecx
+	movl (%ecx),%eax
+	movl %ecx,%cr3
+	ljmp $(__KERNEL_CS),$pa(1f)
+
+1:
+	/*
+	 * Reload the segment registers (cr3 has been changed)
 	 */
 	movl $(__KERNEL_DS), %eax
 	movl %eax, %ss
@@ -264,33 +265,44 @@ gdt:
 	.long	pa(gdt_table)			# gdt address
 
 /*
- * This is initialized to create an identity-mapping at 0-4M (for bootup
+ * This is initialized to create an identity-mapping at 0-8M (for bootup
  * purposes).
  *
- * swapper_pg_dir is at 0x9000.
+ * boot_swapper_pg_dir is at 0x9000.
  */
 .org 0x1000
-swapper_pg_dir:
+boot_swapper_pg_dir:
 	.long 0x0000a007			# We only map 1024 pages
-	.fill 1023,4,0
+	.long 0x0000b007			# for identity mapping
+	.fill 767,4,0
+	.long 0x0000a007			# Kernel mapping
+	.long 0x0000b007
+	.fill 253,4,0
 
 /*
- * The page tables are initialized to only 4MB here - the final page
+ * The page tables are initialized to only 8MB here - the final page
  * tables will be restored from the image.
+ *
+ * Why 8MB? The highest symbol we need to reload is saved_context,
+ * located around 0x0073a340. Let's do a mapping until 0x00800000 (8MB).
  *
  * pg0 is at 0xa000.
  */
 .org 0x2000
 pg0:
 
+/* For info only, not really used per se */
+.org 0x3000
+pg1:
+
 /*
  * empty_zero_page must immediately follow the page tables ! (The
  * initialization loop counts until empty_zero_page)
  */
-.org 0x3000
+.org 0x4000
 empty_zero_page:
 
-.org 0x4000
+.org 0x5000
 
 /*
  * This starts the data section. Note that the above is all
@@ -351,5 +363,9 @@ gdt_table:
 	.quad 0x0000000000000000	/* 0xe8 - unused */
 	.quad 0x0000000000000000	/* 0xf0 - unused */
 	.quad 0x0000000000000000	/* 0xf8 - GDT entry 31: double-fault TSS */
+
+.global swapper_pg_dir
+swapper_pg_dir:
+	.long 0
 
 trampoline_end:
