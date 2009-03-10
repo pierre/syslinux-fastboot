@@ -29,3 +29,26 @@ Add the serial pipe to your .vmx:
 When starting the VM, you can interact with it using:
 
 	socat unix-connect:/tmp/TestHDDserial stdout
+
+
+	How to create a VMDK file
+
+	qemu-img create -s -f vmdk TestHDD.vmdk 200M
+	sudo vmware-mount TestHDD.vmdk /media/vmx
+	sudo cp resume.c32 /media/vmx
+	sudo cp image.gz  /media/vmx/image
+	sudo vmware-mount -x
+	qemu -M pc -hda TestHDD.vmdk -m 1000 -no-kqemu -boot c -s -S
+
+
+	How to create a raw file for Bochs
+
+	bximage
+	sudo losetup /dev/loop0 hd.img -o 32256
+	sudo mkfs.msdos /dev/loop0
+	sudo syslinux /dev/loop0
+	sudo mount /dev/loop0 /mnt/vmx
+	sudo cp resume.c32 /media/vmx
+	sudo cp image.gz /mnt/vmx
+	sudo umount /mnt/vmx/
+	sudo losetup -d /dev/loop0
