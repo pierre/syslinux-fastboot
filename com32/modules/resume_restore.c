@@ -36,31 +36,7 @@ struct syslinux_pm_regs regs;
 struct syslinux_movelist *ml = NULL;
 extern void (*trampoline) (void);
 
-static int clear_nosave_area(void)
-{
-	/*
-	 * See resume_symbols.c:
-	 *
-	 *	sym_info[8]: __nosave_end
-	 *	sym_info[7]: __nosave_begin
-	 */
-	addr_t dsize = (addr_t) *sym_info[8].value - (addr_t) *sym_info[7].value;
-
-	/* Mark this region as zero in the available map */
-	if (syslinux_add_memmap(&amap,
-				(addr_t) *sym_info[7].value, dsize,
-				SMT_ZERO))
-		goto bail;
-
-	dprintf("Nosave area cleared.\n");
-	return 0;
-
-bail:
-	syslinux_free_memmap(amap);
-	syslinux_free_memmap(mmap);
-	syslinux_free_movelist(ml);
-	return 1;
-}
+extern unsigned long __nosave_begin;
 
 /**
  * memory_map_add - relocate a range of pfns
@@ -448,7 +424,11 @@ int load_memory_map(unsigned long data_len,
 	amap = syslinux_dup_memmap(mmap);
 	if (!mmap || !amap)
 		goto bail;
-#endif /* !TESTING */
+
+	if (get_missing_symbols_from_saved_kernel()) {
+		printf("BUG: error while loading symbols.\n");
+		goto bail;
+	}
 
 	/*
 	 * The trampoline must be setup first to reserve the area.
@@ -458,6 +438,7 @@ int load_memory_map(unsigned long data_len,
 		printf("BUG: error when setting up the trampoline.\n");
 		goto bail;
 	}
+#endif /* !TESTING */
 
 	/*
 	 * Restoring program caches is handled via TuxOnIce, in the resume
@@ -674,20 +655,10 @@ extract_restore_list:
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unreachable\n",
 		mapped, syslinux_reserved, highmem_unreachable);
 
-	if (get_missing_symbols_from_saved_kernel()) {
-		printf("BUG: error while loading symbols.\n");
-		goto bail;
-	}
-
-	/* XXX Needed? */
-	if (clear_nosave_area()) {
-		printf("BUG: error while whiping out the nosave area.\n");
-		goto bail;
-	}
-
 	/* Set up registers */
 	memset(&regs, 0, sizeof regs);
-	regs.eip = 0x8000;
+	regs.eip = __nosave_begin;
+	regs.ebx = __nosave_begin;
 
 #ifdef METADATA_DEBUG
 	dprintf("Final memory map:\n");

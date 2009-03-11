@@ -29,7 +29,9 @@ static unsigned long symbols_table_posn;
 static size_t data_len;
 
 /* See resume_trampoline_asm.S */
-extern unsigned long swapper_pg_dir;
+extern unsigned long saved_swapper_pg_dir;
+extern unsigned long __nosave_begin;
+extern unsigned long __nosave_end;
 
 struct swsusp_symbl_info sym_info[] =
 {
@@ -40,9 +42,9 @@ struct swsusp_symbl_info sym_info[] =
     {"saved_context_edi",       &saved_context_edi},
     {"saved_context",           &saved_context_state},
     {"saved_context_eflags",    &saved_context_eflags},
-    {"swapper_pg_dir",          &swapper_pg_dir},
-    {"__nosave_begin",          &saved_context_nosave_begin},
-    {"__nosave_end",            &saved_context_nosave_end},
+    {"swapper_pg_dir",          &saved_swapper_pg_dir},
+    {"__nosave_begin",          &__nosave_begin},
+    {"__nosave_end",            &__nosave_end},
     {"\0", 0},
 };
 
