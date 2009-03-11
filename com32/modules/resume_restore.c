@@ -82,8 +82,6 @@ bail:
  *	syslinux_reserved, highmem_unreachable and mapped are modified,
  *	if needed.
  **/
-// XXX
-int count = 1; /* trampoline */
 static int memory_map_add(unsigned long start_range_pfn,
 			  unsigned long end_range_pfn,
 			  addr_t data_addr,
@@ -102,11 +100,6 @@ static int memory_map_add(unsigned long start_range_pfn,
 	addr_t final_upper_addr;
 	/* Size of the data to shuffle */
 	addr_t dsize;
-
-	// XXX
-	count++;
-	if (count > 681)
-		return 0;
 
 	/*
 	 * This portion is not available (used by syslinux)
