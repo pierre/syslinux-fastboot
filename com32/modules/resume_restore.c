@@ -592,10 +592,14 @@ extract_restore_list:
 			dump_restore_list(data_buffers_list);
 #endif /* METADATA_DEBUG */
 
+#ifndef TESTING
 			/*
 			 * Create a big chunk of data for later shuffling and
 			 * free the list of data
 			 * This will also free the buffer list.
+			 * Note: when testing, this is too much mallocing.
+			 * There is a memory leak in this situation (lists not
+			 * freed).
 			 */
 			shuffling_load_addr = malloc((prev_dest_pfn -
 						      start_range_pfn + 1) *
@@ -603,7 +607,6 @@ extract_restore_list:
 			extract_data_from_list(&data_buffers_list,
 					       (char *) shuffling_load_addr);
 
-#ifndef TESTING
 			/* XXX Check it is absolute pfns and not zone offsets */
 			if(memory_map_add(start_range_pfn,
 					  prev_dest_pfn,
@@ -649,11 +652,12 @@ extract_restore_list:
 		dprintf("All data have been read.\n");
 
 	/* Cleanups */
-	free(toi_image_buffer);
 	free(data_buffer);
 	free(uncompr_tmp);
 
 #ifndef TESTING
+	free(toi_image_buffer);
+
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unreachable\n",
 		mapped, syslinux_reserved, highmem_unreachable);
 
