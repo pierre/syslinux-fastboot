@@ -86,7 +86,8 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 *	git: fc38151947477596aa27df6c4306ad6008dc6711
 	 *
 	 * You need a 2.6.28 kernel or more recent.
-	 * XXX Take into account the trampoline!
+	 *
+	 * Anything below 0x100000 is marked as NoSave, isn't it?
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	while (final_load_addr < 0x7c00) {
@@ -322,9 +323,12 @@ read_buf_size_pagedir2:
 						    toi_image_buffer_posn +
 						    sizeof(unsigned long));
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
-			toi_image_buffer_posn += 1;
-			/* This is not a bug */
-			continue;
+			/* This is a bug: wrong buffer size */
+			printf("BUG: Wrong buffer size while reading pagedir2.\n");
+			printf("\tPFN %lu: buffer_size=%d\n",
+			       *dest_pfn,
+			       *data_buffer_size);
+			goto bail;
 		} else if (!*dest_pfn) {
 			/* This is a bug */
 			printf("BUG: end of pagedir2 reached but still "
@@ -431,8 +435,7 @@ int load_memory_map(unsigned long data_len,
 	}
 
 	/*
-	 * The trampoline must be setup first to reserve the area.
-	 * XXX return size see above
+	 * The trampoline will be relocated on swsusp stack.
 	 */
 	if (setup_trampoline_blob()) {
 		printf("BUG: error when setting up the trampoline.\n");
@@ -442,18 +445,19 @@ int load_memory_map(unsigned long data_len,
 
 	/*
 	 * Restoring program caches is handled via TuxOnIce, in the resume
-	 * code path from the saved kernel.
+	 * code path from the saved kernel
 	 */
 	if (skip_pagedir2(pagedir2_size)) {
 		printf("Error while skipping pagedir2.\n");
 		goto bail;
 	}
 
-	/* pagedir1 is PAGE_SIZE aligned */
-	do {
-		MOVE_TO_NEXT_PAGE
-		READ_BUFFER(dest_pfn, unsigned long*);
-	} while (!*dest_pfn);
+	/*
+	 * pagedir1 is PAGE_SIZE aligned
+	 * It is likely that the first read pfn will be 0
+	 */
+	MOVE_TO_NEXT_PAGE
+	READ_BUFFER(dest_pfn, unsigned long*);
 	goto read_buf_size_pagedir1;
 
 	/*
@@ -465,12 +469,10 @@ int load_memory_map(unsigned long data_len,
 
 read_buf_size_pagedir1:
 		/* Read the size of the data */
-		READ_BUFFER(data_buffer_size, unsigned int*);
-
-		/* Read the size of the data */
 		data_buffer_size = (unsigned int*) (toi_image_buffer +
 						     toi_image_buffer_posn +
 						     sizeof(unsigned long));
+
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
 			/* This is a bug: wrong buffer size */
 			printf("BUG: Wrong buffer size while reading pagedir1.\n");
@@ -498,7 +500,7 @@ read_buf_size_pagedir1:
 
 #ifdef METADATA_DEBUG
 		/*
-		 * This is useful to debug the parser code. Add a prink() in
+		 * This is useful to debug the parser code. Add a printk() in
 		 * do_rw_loop() and check if the pfns match.
 		 * Debugging the code related to pageset1 is tough. There is no
 		 * (easy) way to check the values since it is always saved last
