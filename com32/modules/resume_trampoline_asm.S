@@ -11,8 +11,6 @@
  *
  * ----------------------------------------------------------------------- */
 
-.text
-
 /* Linux definitions. See arch/x86/include/asm/segment.h */
 #define GDT_ENTRY_BOOT_CS		2
 #define GDT_ENTRY_BOOT_DS		(GDT_ENTRY_BOOT_CS + 1)
@@ -27,11 +25,13 @@
 #define __USER_DS			(GDT_ENTRY_DEFAULT_USER_DS* 8 + 3)
 #define __USER_CS			(GDT_ENTRY_DEFAULT_USER_CS* 8 + 3)
 #define __PAGE_OFFSET			0xC0000000
-#define INIT_MAP_BEYOND_END		(1*1024*1024)		/* 1MB */
-#define STACK_SIZE			(8 * 1024)
+
+#define __SYSLINUX_CS			0x20
 
 /* Physical address */
-#define pa(X) ((X)-trampoline_start+0x8000)
+#define pa2(X) ((X)-trampoline_start+0x1473000)
+// XXX
+#define pa(X) ((X)-boot_data_start+0x8000)
 
 .global trampoline_start
 .global trampoline_end
@@ -41,83 +41,83 @@
 .global saved_context_esi
 .global saved_context_edi
 .global saved_context_eflags
+.global saved_swapper_pg_dir
+.global __nosave_begin
+.global __nosave_end
+.global boot_data_start
+.global boot_data_end
 
-	.align 32
-	.code32
+.text
 
 /*
+ * Start of our text segment (it will be relocated at __nosave_begin).
+ *
  * WARNING!
  *
  * All symbols compiled in the com32 modules are put in a random place. Since
- * we relocate the trampoline starting at 0x8000, when accessing these symbols
- * you need to use the pa (physical address) macro.
+ * we relocate the trampoline, when accessing these symbols
+ * you need to use the pa (physical address) macro to access data and pa2 to
+ * jump inside the trampoline.
+ *
+ * XXX Try to do something clever to get rid of pa*. ld script?
  */
-reloc_start:
 trampoline_start:
-	movw $0x1f01, 0xb8000 /* :) */
 	cli
 	cld
 
-/*
- * Set segments to known values.
- */
-	lidt pa(idt_descr)		# load idt with 0, 0
-	lgdt pa(gdt_descr)		# load gdt with whatever is appropriate
-
-	ljmp $(__KERNEL_CS), $pa(startup_32)
-
-startup_32:
-	movl $(__KERNEL_DS),%eax
-	movl %eax, %ds
-	movl %eax, %es
-	movl %eax, %fs
-	movl %eax, %gs
-	movl %eax, %ss
-
-	// XXX SMP: turn on paging options (PSE,PAE,..) - cr4
-
-/*
- * Initialize page tables.
- *
- * Begin at pg0 (page 0) and init all pages to 007 (PRESENT + RW + USER).
- *
- * Format of a page table entry:
- *
- * 				<-- 4bytes -->
- *      31                                  12 11    9 8 7 6 5 4 3 2 1 0
- *     +----------------------------------------------------------------+
- *     |                                      |       |   | | |   |U|R| |
- *     |      PAGE FRAME ADDRESS 31..12       | AVAIL |0 0|D|A|0 0|/|/|P|
- *     |                                      |       |   | | |   |S|W| |
- *     +----------------------------------------------------------------+
- *
- * The PDE are allocated statically.
- */
 	/*
-	 * Page tables are stored starting at pg0, at 0x9c00:
-	 * pa(boot_swapper_pg_dir) + 0x1000 (1024 * 4 = 4K)
+	 * Our first job is to turn on paging, but before, we need to
+	 * initialize our page tables.
+	 *
+	 * Begin at pg0 (page 0) and init all pages to 007 (PRESENT+RW+USER).
+	 *
+	 * Format of a page table entry:
+	 *
+	 * 				<-- 4bytes -->
+	 *  31                                  12 11    9 8 7 6 5 4 3 2 1 0
+	 * +----------------------------------------------------------------+
+	 * |                                      |       |   | | |   |U|R| |
+	 * |      PAGE FRAME ADDRESS 31..12       | AVAIL |0 0|D|A|0 0|/|/|P|
+	 * |                                      |       |   | | |   |S|W| |
+	 * +----------------------------------------------------------------+
+	 *
+	 * Page tables are stored starting at pg0, at 0x9000.
+	 * The PDE are allocated statically (see the data section below).
+	 */
+
+	/*
+	 * Map 0x8000 ... 0xc000
+	 * This is used by the trampoline to access page directories/tables
+	 * and misc. data.
 	 */
 	movl $pa(pg0),%edi
 	movl $007,%eax				# 0x007 = PRESENT+RW+USER
 
-	/* Fill the first page table: 4M is large enough for the trampoline */
 2:	stosl					# Write one entry:
 						# write %eax in %edi and
 						# advance edi
 	addl $0x1000,%eax			# Next page address (4K)
-	cmp $pa(empty_zero_page),%edi
+	cmp $0xb000,%edi			# Write only one page table
 	jne 2b
 
 	/*
-	 * %edi now points to the first safe page (end of our page tables),
-	 * i.e. 0x8000 + 0x4000 = 0xc000
+	 * Map __nosave_begin ... __nosave_end
+	 * This is used to access the code itself of the trampoline.
 	 */
+	movl $pa(pg1),%edi
+	movl $007,%eax				# 0x007 = PRESENT+RW+USER
+	addl $0x1400000,%eax			# Align to cover __nosave_begin
+2:	stosl					# Write one entry:
+						# write %eax in %edi and
+						# advance edi
+	addl $0x1000,%eax			# Next page address (4K)
+	cmp $pa(empty_zero_page),%edi		# Write only on page table
+	jne 2b
 
 	/* Load CR3 with the address of the page directory */
 	movl $pa(boot_swapper_pg_dir),%eax
 	movl %eax,%cr3
 
-	/* Set the paging bit of CR0 */
 	movl %cr0,%eax
 	orl $0x80000000,%eax
 	/*
@@ -129,31 +129,26 @@ startup_32:
 	 * eip.
 	 */
 	movl %eax,%cr0
-	ljmp $(__KERNEL_CS), $pa(1f)
-1:
-	/* Set up the stack pointer */
-	movl pa(stack_start),%esp
+	/* PAGING enabled */
 
-	// XXX Wakeup other CPUs
+	/* We need to relocate ourselves in the kernel address space */
+	ljmp $(__SYSLINUX_CS),$(pa2(1f)+__PAGE_OFFSET)
+
+1:
 	// XXX lidt?
 
 	/*
-	 * All the work before was to bootstrap the system. Now, we are ready
-	 * to jump into the old kernel.
+	 * We are still using the SYSLINUX gdt. Now is a good time to overwrite
+	 * it with the Linux' one.
 	 *
-	 * See arch/x86/power/hibernate_asm_*.S
-	 *
-	 * Now restore the page directory to its proper value.
+	 * XXX Is there a way to reload it from the image instead of having
+	 * to hardcode it here?
 	 */
-	movl pa(swapper_pg_dir),%ecx
-	movl (%ecx),%eax
-	movl %ecx,%cr3
-	ljmp $(__KERNEL_CS),$pa(1f)
+	lgdt pa2(gdt_descr_reloc)
 
-1:
-	/*
-	 * Reload the segment registers (cr3 has been changed)
-	 */
+	ljmp $(__KERNEL_CS),$pa2(2f)+__PAGE_OFFSET
+
+2:
 	movl $(__KERNEL_DS), %eax
 	movl %eax, %ss
 
@@ -165,29 +160,23 @@ startup_32:
 	movl %eax, %fs
 	movl %eax, %gs
 
-	// XXX Why is the state of es and ss saved? This is fixed!
-	//movw $(state->es), %es
-	//movw $(state->ss), %ss
-	//movw $(state->fs), %fs
-	//movw $(state->gs), %gs
-
-	// XXX Linux doesn't care about the LDT. Wine apps do though
-	//lldt $(state->ldt)
-
-recover_cr3:
 	/*
-	 * Control registers
-	 * XXX What about state->cr0 and state->cr2?
+	 * All the work before was to bootstrap the system. Now, we are ready
+	 * to jump into the old kernel.
+	 *
+	 * See arch/x86/power/hibernate_asm_*.S
+	 *
+	 * The first thing to do is to restore the page directory to its
+	 * proper value. This will give us access to the saved_context_* data.
+	 *
+	 * XXX SMP: turn on paging options (PSE, PAE, ...) - reload cr4?
+	 * XXX Linux doesn't care about the LDT. Wine apps do though
 	 */
-	movl $(saved_cr4), %eax
-	movl %eax, %cr4
+	movl pa(saved_swapper_pg_dir),%ecx
+	movl %ecx,%cr3
+	ljmp $(__KERNEL_CS),$(pa2(3f)+__PAGE_OFFSET)
 
-	movl $(saved_cr3), %eax
-	movl %eax, %cr3
-
-	ljmp $(__KERNEL_CS), $pa(jmp_cr3)
-
-jmp_cr3:
+3:
 	/*
 	 * Flush TLB, including "global" things (vmalloc)
 	 */
@@ -204,119 +193,76 @@ jmp_cr3:
 	movl %ecx, %cr3
 	movl %eax, %cr4				# Turn PGE back on
 
-/*
- * Restore the other general registers
- */
-recover_general:
-	/*
-	 * Stack pointer
-	 */
-	movl $(saved_context_esp), %ecx
-	movl (%ecx), %esp
-	movl $(saved_context_ebp), %ecx
-	movl (%ecx), %ebp
+	// XXX Wakeup other CPUs?
 
 	/*
-	 * General purpose registers
+	 * Restore stack information
+	 * It looks like:
+	 *	ebp: 0x...EC0 |
+	 *	       ...    |
+	 *	esp: 0x...E9C V
+	 * (36 bytes)
 	 */
-	movl $(saved_context_ebx), %ecx
-	movl (%ecx), %ebx
+	movl pa2(saved_context_esp)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%esp
+	movl pa2(saved_context_ebp)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%ebp
 
-	/*
-	 * Index registers
-	 */
-	movl $(saved_context_esi), %ecx
-	movl (%ecx), %esi
-	movl $(saved_context_edi), %ecx
-	movl (%ecx), %edi
+	/* Restore general purpose registers (likely to be zeroed) */
+	movl pa2(saved_context_ebx)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%ebx
+
+	/* Restore index registers (likely to be zeroed) */
+	movl pa2(saved_context_esi)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%esi
+	movl pa2(saved_context_edi)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%edi
 
 	/*
 	 * Restore the flags
+	 * Looks like 0x200256:
+	 * 0000 0000 0010 0000 0000 0010 0101 0110
+	 *                            |   | |  |
+	 *                            IE ZF AF PF
 	 */
-	movl $(saved_context_eflags), %ecx
-	pushl (%ecx)
+	movl pa2(saved_context_eflags)+__PAGE_OFFSET, %eax
+	addl $__PAGE_OFFSET,%eax
+	hlt // XXX BROKEN
+	pushl (%eax)
 	popfl
 
-	/*
-	 * Cleanup
-	 */
+	/* Cleanup */
 	xorl %eax, %eax
+	xorl %ecx, %ecx
+	xorl %edx, %edx
+
+	/* pop to get EIP (value of %esp) */
 	ret
 
-/*
- * Misc. definitions
- */
+/* Data that needs to be accessed after loading swapper_pg_dir */
+saved_context_esp:
+	.long	0
+saved_context_ebp:
+	.long	0
+saved_context_ebx:
+	.long	0
+saved_context_esi:
+	.long	0
+saved_context_edi:
+	.long	0
+saved_context_eflags:
+	.long	0
 
-stack_start:
-	.long INIT_MAP_BEYOND_END+8192
-	.long __KERNEL_DS
-
-	.align 0
-	.word	0
-idt_descr:
-	.word	0				# idt limit = 0
-idt:
-	.long	0				# idt base = 0L
-
-	.word 0
-gdt_descr:
-	.word	0xf8				# gdt limit
-gdt:
-	.long	pa(gdt_table)			# gdt address
-
-/*
- * This is initialized to create an identity-mapping at 0-8M (for bootup
- * purposes).
- *
- * boot_swapper_pg_dir is at 0x9000.
- */
-.org 0x1000
-boot_swapper_pg_dir:
-	.long 0x0000a007			# We only map 1024 pages
-	.long 0x0000b007			# for identity mapping
-	.fill 767,4,0
-	.long 0x0000a007			# Kernel mapping
-	.long 0x0000b007
-	.fill 253,4,0
-
-/*
- * The page tables are initialized to only 8MB here - the final page
- * tables will be restored from the image.
- *
- * Why 8MB? The highest symbol we need to reload is saved_context,
- * located around 0x0073a340. Let's do a mapping until 0x00800000 (8MB).
- *
- * pg0 is at 0xa000.
- */
-.org 0x2000
-pg0:
-
-/* For info only, not really used per se */
-.org 0x3000
-pg1:
-
-/*
- * empty_zero_page must immediately follow the page tables ! (The
- * initialization loop counts until empty_zero_page)
- */
-.org 0x4000
-empty_zero_page:
-
-.org 0x5000
-
-/*
- * This starts the data section. Note that the above is all
- * in the text section because it has alignment requirements
- * that we cannot fulfill any other way.
- */
-.data
-
-.align 0
-/*
- * GDT for cpu#0
- * See arch/x86/kernel/cpu/common.c
- */
-gdt_table:
+gdt_descr_reloc:
+	.word	0xf8
+gdt_reloc:
+	.long	pa2(gdt_table_reloc)+__PAGE_OFFSET	# gdt address
+gdt_table_reloc:
 	.quad 0x0000000000000000	/* NULL descriptor */
 	.quad 0x0000000000000000	/* 0x0b reserved */
 	.quad 0x0000000000000000	/* 0x13 reserved */
@@ -363,9 +309,68 @@ gdt_table:
 	.quad 0x0000000000000000	/* 0xe8 - unused */
 	.quad 0x0000000000000000	/* 0xf0 - unused */
 	.quad 0x0000000000000000	/* 0xf8 - GDT entry 31: double-fault TSS */
-
-.global swapper_pg_dir
-swapper_pg_dir:
-	.long 0
-
 trampoline_end:
+
+/*
+ * Start of our data section (will be reloaded at 0x8000).
+ *
+ * Note: the trampoline will be restored at __nosave_begin. It needs to fit
+ * between __nosave_begin and __nosave_end! (4K). There is no room for our
+ * boot page tables. This is why the bulk of data is restored lower in
+ * memory, in a safer, larger place.
+ */
+
+/* Needed to honor the .org */
+.data
+
+boot_data_start:
+saved_swapper_pg_dir:
+	.long	0
+__nosave_begin:
+	.long	0
+__nosave_end:
+	.long	0
+
+/*
+ * We need to do a double mapping of
+ *		0x8000 -- 0xe000
+ *		__nosave_begin+__PAGE_OFFSET -- __nosave_end+__PAGE_OFFSET
+ *
+ * When restoring swapper_pg_dir, EIP needs to be in the 0xCxxxxx address
+ * space. This means that, when we enable paging, we need to add a kernel
+ * space mapping as well as the identity one.
+ *
+ * boot_swapper_pg_dir is at 0x9000.
+ *
+ * XXX This needs to be dynamic. __nosave_begin will not always be at 0xc146xxx
+ */
+.org 0x1000
+boot_swapper_pg_dir:
+	.long 0x0000a007	# pfns 0 --> 1023 (0x0-0x3FF000)
+	.fill 4,4,0
+	.long 0x0000b007	# pfns 5120 --> 6143 (1400000-17FF000)
+	.fill 766,4,0
+	.long 0x0000b007	# pfns 791552 --> 792575 (0xC1400000-0xC17FF000)
+	.fill 251,4,0x0000b007  # XXX?? I screwed something up,
+				# I shouldn't need that. Check the math.
+
+/*
+ * These are provisional page tables - the final page tables will be
+ * restored from the image.
+ *
+ * pg0 is at 0xa000.
+ */
+.org 0x2000
+pg0:
+
+/* For info only, not really used per se */
+.org 0x3000
+pg1:
+
+/*
+ * empty_zero_page must immediately follow the page tables! (The
+ * initialization loop counts until empty_zero_page)
+ */
+.org 0x4000
+empty_zero_page:
+boot_data_end:

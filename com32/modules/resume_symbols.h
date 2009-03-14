@@ -43,17 +43,9 @@ struct saved_context {
 	unsigned long return_address;
 } __attribute__((packed));
 
-unsigned long saved_context_ebx;
-unsigned long saved_context_esp;
-unsigned long saved_context_ebp;
-unsigned long saved_context_esi;
-unsigned long saved_context_edi;
 unsigned long saved_context_state;
-unsigned long saved_context_eflags;
-unsigned long saved_context_nosave_begin;
-unsigned long saved_context_nosave_end;
 unsigned long saved_idt_address;
-unsigned long saved_cr0, saved_cr2, saved_cr3, saved_cr4;
+unsigned long saved_cr0, saved_cr2, saved_cr4;
 
 struct swsusp_symbl_info sym_info[11];
 

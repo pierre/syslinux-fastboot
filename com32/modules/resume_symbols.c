@@ -30,6 +30,12 @@ static size_t data_len;
 
 /* See resume_trampoline_asm.S */
 extern unsigned long saved_swapper_pg_dir;
+extern unsigned long saved_context_esp;
+extern unsigned long saved_context_ebp;
+extern unsigned long saved_context_ebx;
+extern unsigned long saved_context_esi;
+extern unsigned long saved_context_edi;
+extern unsigned long saved_context_eflags;
 extern unsigned long __nosave_begin;
 extern unsigned long __nosave_end;
 
@@ -167,7 +173,7 @@ int get_missing_symbols_from_saved_kernel(void)
 	state = (struct saved_context*) saved_context_state;
 	saved_idt_address = state->idt.address;
 	saved_cr4 = state->cr4;
-	saved_cr3 = state->cr3;
+	//saved_cr3 = state->cr3;
 	saved_cr2 = state->cr2;
 	saved_cr0 = state->cr0;
 
