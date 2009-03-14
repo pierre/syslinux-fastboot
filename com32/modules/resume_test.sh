@@ -18,12 +18,14 @@ if [[ $1 == "vmw" ]]; then
 	VMW=true
 fi
 
+MNT_PNT=/media/vmx
+
 if [[ -n $VMW ]]; then
 	VMX=/vms/TestsHDD/TestsHDD.vmx
 	VMDK=/vms/TestsHDD/TestsHDD.vmdk
 	trap "sudo vmware-mount -x;vmrun stop $VMX" SIGINT SIGTERM
 else
-	VMDK=/vms/TestsHDDQemu/TestsHDDQemu.vmdk
+	RAW=resume_testing/resume_testing.img
 fi
 
 # Check if the build is valid
@@ -32,10 +34,18 @@ if [[ $? != 0 ]]; then
 	exit 1
 fi
 
-# Update the .vmdk file
-sudo vmware-mount "$VMDK" /media/vmx
-sudo cp resume.c32 /media/vmx
-sudo vmware-mount -x
+if [[ -n $VMW ]]; then
+	# Update the .vmdk file
+	sudo vmware-mount "$VMDK" "$MNT_PNT"
+	sudo cp resume.c32 "$MNT_PNT"
+	sudo vmware-mount -x
+else
+	sudo losetup /dev/loop0 "$RAW"
+	sudo mount /dev/loop0 "$MNT_PNT"
+	sudo cp resume.c32 "$MNT_PNT"
+	sudo umount "$MNT_PNT"
+	sudo losetup -d /dev/loop0
+fi
 
 # Run a VM
 if [[ -n $VMW ]]; then
@@ -46,6 +56,6 @@ if [[ -n $VMW ]]; then
 	#socat unix-connect:/tmp/TestsHDD3 tcp4-listen:12345 
 	vmrun list
 else
-	qemu -nographic -M pc -hda "$VMDK" -m 1000 -no-kqemu -boot c #-S -s
-	#qemu -M pc -hda "$VMDK" -m 1000 -no-kqemu -boot c #-S -s
+	#qemu -nographic -M pc -hda "$RAW" -m 1500 -no-kqemu -boot c #-S -s
+	qemu -M pc -hda "$RAW" -m 1500 -no-kqemu -boot c #-S -s
 fi
