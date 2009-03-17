@@ -74,7 +74,7 @@ tidy dist:
 install: all
 
 clean: tidy
-	@echo "  CLEAN     *.a *.lst *.elf *.o *.c32 *.c~ *.h~ Makefile~"
+	@echo "  CLEAN   *.a *.lst *.elf *.o *.c32 *.c~ *.h~ Makefile~"
 	@rm -f *.o *.c32 *.c~ *.h~ Makefile~
 
 spotless: clean
