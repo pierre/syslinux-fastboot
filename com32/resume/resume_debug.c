@@ -163,12 +163,12 @@ void dump_pagemap()
 }
 #endif /* !DYN_PAGEFLAGS */
 
+#ifdef METADATA_DEBUG
 /**
  * dump_block_chains: Print the contents of the bdev info array.
  */
 void dump_block_chains(struct hibernate_extent_chain* chain)
 {
-#ifdef METADATA_DEBUG
 	int i;
 
 	// XXX 1 chain FIXME
@@ -190,8 +190,8 @@ void dump_block_chains(struct hibernate_extent_chain* chain)
 
 		printf("\n");
 	}
-#endif /* METADATA_DEBUG */
 }
+#endif /* METADATA_DEBUG */
 
 void dump_extent_chain(struct hibernate_extent_chain* chain)
 {

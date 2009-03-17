@@ -21,6 +21,7 @@
 #include "resume_bitmaps.h"
 #include "resume_parser.h"
 
+#ifdef METADATA_DEBUG
 /**
  * toi_load_extent_chain - load a chain of extents
  * @chain:	Chain to populate.
@@ -54,6 +55,7 @@ static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
 
 	return 0;
 }
+#endif /* METADATA_DEBUG */
 
 /**
  * read_metadata - read configuration and bitmaps from disk
@@ -166,8 +168,8 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	dump_extent_chain(chain);
 
 	/* This is not needed, as we have filesystem drivers */
-	//toi_load_extent_chain(chain);
-	//dump_block_chains(chain);
+	toi_load_extent_chain(chain);
+	dump_block_chains(chain);
 #endif /* METADATA_DEBUG */
 
 	/*
