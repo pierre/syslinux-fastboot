@@ -15,6 +15,8 @@
 ## resume Makefile
 ##
 
+MAKEFLAGS += --no-print-directory
+
 topdir		:= ../..
 include $(topdir)/MCONFIG.embedded
 com32		:= $(topdir)/com32
@@ -23,16 +25,16 @@ MODULES		:= resume.c32
 
 INCLUDES	:= -I$(com32)/include
 
-LIBGCC		:= $(shell $(CC) $(GCCOPT) --print-libgcc)
-LIB		:= liboldcom32.a
-
-LIBS		:= $(LIB) $(LIBGCC) \
+LIBS		:= $(LIBGCC) \
 		   $(com32)/libutil/libutil_com.a \
 		   $(com32)/lib/libcom32.a
 
 LDFLAGS		:= -m elf_i386 -T $(com32)/lib/com32.ld
 
 all: $(MODULES) $(LIB)
+
+test:
+	@bash resume_test.sh
 
 resume.elf: resume_restore.o resume_parser.o resume_debug.o \
 	    resume_trampoline.o resume_bitops.o resume_bitmaps.o \
