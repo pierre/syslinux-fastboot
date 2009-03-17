@@ -36,20 +36,29 @@ fi
 
 if [[ -n $VMW ]]; then
 	# Update the .vmdk file
+	echo "  MOUNT   $MNT_PNT"
 	sudo vmware-mount "$VMDK" "$MNT_PNT"
+	echo "  CP      $MNT_PNT/resume.c32"
 	sudo cp resume.c32 "$MNT_PNT"
+	echo "  UMOUNT  $MNT_PNT"
 	sudo vmware-mount -x
 else
+	echo "  LOSETUP /dev/loop0"
 	sudo losetup /dev/loop0 "$RAW"
+	echo "  MOUNT   $MNT_PNT"
 	sudo mount /dev/loop0 "$MNT_PNT"
+	echo "  CP      $MNT_PNT/resume.c32"
 	sudo cp resume.c32 "$MNT_PNT"
+	echo "  UMOUNT  $MNT_PNT"
 	sudo umount "$MNT_PNT"
+	echo "  LOSETUP /dev/loop0"
 	sudo losetup -d /dev/loop0
 fi
 
 # Run a VM
 if [[ -n $VMW ]]; then
 	rm -f /tmp/TestsHDD3
+	echo "  VMW     $RAW"
 	vmrun start /vms/TestsHDD/TestsHDD.vmx nogui
 	sleep 2
 	socat unix-connect:/tmp/TestsHDD3 stdout
@@ -57,5 +66,6 @@ if [[ -n $VMW ]]; then
 	vmrun list
 else
 	#qemu -nographic -M pc -hda "$RAW" -m 1500 -no-kqemu -boot c #-S -s
+	echo "  QEMU    $RAW"
 	qemu -M pc -hda "$RAW" -m 1500 -no-kqemu -boot c #-S -s
 fi
