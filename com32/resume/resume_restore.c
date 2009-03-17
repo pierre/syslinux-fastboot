@@ -113,7 +113,8 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * uint32_t. But I kept it not to forget...
 	 */
 	final_upper_addr = __pfn_to_phys(final_end_range_pfn);
-	while (final_upper_addr > 0x100000000) {
+	/* while (final_upper_addr > 0x100000000) { */
+	while (0) {
 		/* Debug info */
 		(*highmem_unreachable)++;
 
