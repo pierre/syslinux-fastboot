@@ -26,6 +26,10 @@
 #define __USER_CS			(GDT_ENTRY_DEFAULT_USER_CS* 8 + 3)
 #define __PAGE_OFFSET			0xC0000000
 
+/* CPU definitions. See arch/x86/include/asm/processor-flags.h */
+#define X86_CR4_PAE	0x00000020 /* enable physical address extensions */
+#define X86_CR4_PGE	0x00000080 /* enable global pages */
+
 #define __SYSLINUX_CS			0x20
 
 /* Physical address */
@@ -136,6 +140,8 @@ trampoline_start:
 
 1:
 	// XXX lidt?
+	// XXX lldt? Linux doesn't care about the LDT. Wine apps do though.
+	lidt pa2(idt_descr_reloc)
 
 	/*
 	 * We are still using the SYSLINUX gdt. Now is a good time to overwrite
@@ -149,7 +155,7 @@ trampoline_start:
 	ljmp $(__KERNEL_CS),$pa2(2f)+__PAGE_OFFSET
 
 2:
-	movl $(__KERNEL_DS), %eax
+	movl $__KERNEL_DS, %eax
 	movl %eax, %ss
 
 	movl $(__USER_DS), %ecx
@@ -170,28 +176,29 @@ trampoline_start:
 	 * proper value. This will give us access to the saved_context_* data.
 	 *
 	 * XXX SMP: turn on paging options (PSE, PAE, ...) - reload cr4?
-	 * XXX Linux doesn't care about the LDT. Wine apps do though
 	 */
 	movl pa(saved_swapper_pg_dir),%ecx
 	movl %ecx,%cr3
 	ljmp $(__KERNEL_CS),$(pa2(3f)+__PAGE_OFFSET)
 
 3:
-	/*
-	 * Flush TLB, including "global" things (vmalloc)
-	 */
-	movl %cr4, %eax
-	movl %eax, %edx
-	andl $~(1<<7), %edx			# PGE bit in cr4
-	movl %edx, %cr4				# Turn off PGE
+	/* Flush TLB, including "global" things (vmalloc) */
+	movl pa2(mmu_cr4_features)+__PAGE_OFFSET, %ecx
+	jecxz 1f			# cr4 Pentium and higher, skip if zero
+	movl %ecx, %edx
+	andl $~(X86_CR4_PGE),%edx
+	movl %edx,%cr4			# turn off PGE
+1:
 	/*
 	 * Hardware automatically invalidates (implicitly flushing) TLB
 	 * entries when the contents of the cr3 register changes,
 	 * since all the TLB stored entries become invalid.
 	 */
-	movl %cr3, %ecx				# Flush TLB
-	movl %ecx, %cr3
-	movl %eax, %cr4				# Turn PGE back on
+	movl %cr3,%eax			# flush TLB
+	movl %eax,%cr3
+	jecxz 1f			# cr4 Pentium and higher, skip if zero
+	movl %ecx,%cr4			# turn PGE back on
+1:
 
 	// XXX Wakeup other CPUs?
 
@@ -258,6 +265,19 @@ saved_context_edi:
 saved_context_eflags:
 	.long	0
 
+#if !defined(CONFIG_X86_PAE) || defined(CONFIG_X86_64)
+mmu_cr4_features:
+	.long	0
+#else
+mmu_cr4_features:
+	.long	X86_CR4_PAE
+#endif
+
+
+idt_descr_reloc:
+	.word	0
+idt_reloc:
+	.long	0
 gdt_descr_reloc:
 	.word	0xf8
 gdt_reloc:
