@@ -90,7 +90,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * Anything below 0x100000 is marked as NoSave, isn't it?
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	while (final_load_addr < 0x7c00) {
+	while (final_load_addr <= 0xc000) {
 		/* Debug info */
 		(*syslinux_reserved)++;
 
@@ -164,7 +164,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 		 * SMT_UNDEFINED), this is probably because there is not enough
 		 * RAM. Typical mistake in a VM with only 256M.
 		 */
-		printf("BUG: Memory segment at 0x%08x (len %d) is "
+		printf("BUG: Memory segment at 0x%08x (len %08x) is "
 		       "unavailable: error=%d\n",
 		       final_load_addr, dsize,
 		       syslinux_memmap_type(amap, final_load_addr, dsize));
