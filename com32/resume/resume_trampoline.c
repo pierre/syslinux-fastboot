@@ -27,14 +27,15 @@ extern struct syslinux_memmap *mmap, *amap;
 extern struct syslinux_movelist *ml;
 
 /* Defined in resume_trampoline_asm.S */
-extern const unsigned long trampoline_start(void);
-extern const unsigned long trampoline_end;
+extern unsigned long trampoline_start(void);
+extern unsigned long trampoline_end;
 
-extern const unsigned long boot_data_start(void);
-extern const unsigned long boot_data_end;
+extern unsigned long boot_data_start(void);
+extern unsigned long boot_data_end;
 
-extern unsigned long __nosave_begin;
-extern unsigned long __nosave_end;
+extern const unsigned long __nosave_begin;
+extern const unsigned long __nosave_end;
+
 /**
  * setup_trampoline_blob - prepare the code to reload the CPU saved state
  *
