@@ -1,3 +1,27 @@
+	How to parse manually the image
+
+This is an example of a shell script implementation of the parser:
+
+# Beginning of data, PAGE_SIZE aligned
+j=118784
+# Number of pfns found
+good=0
+
+# 16432 can be found in the header
+while [[ $good -lt 16432 ]]; do
+	let tmp2=$j+4
+	let size=`od -j$tmp2 -N4 -Ad -t u4 image | awk '{print $2}'`
+	if [[ (! $? -eq 0) || $size -gt 4096 ]]; then
+		let j=$j+1
+		continue
+	else
+		let good=$good+1
+		echo "$j	[$size]	($good)	=	`od -j$j -N4 -Ad -tu4 image | awk '{print $2}'`"
+		#echo "`od -j$j -N4 -Ad -tu4 image | awk '{print $2}'`"
+		let j=$j+$size+8
+	fi
+done
+
 	How to test resume.c32 using VMware Workstation
 
 Create a blank VM with a small disk and format it as ext3.
