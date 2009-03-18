@@ -90,7 +90,8 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * Anything below 0x100000 is marked as NoSave, isn't it?
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	while (final_load_addr <= 0xc000) {
+	// XXX BUG
+	while (final_load_addr <= 0x7c00) {
 		/* Debug info */
 		(*syslinux_reserved)++;
 
