@@ -20,7 +20,7 @@ LDFLAGS  = $(GCCOPT) -g
 INCLUDE  = -I$(topdir)/com32/include
 NASM     = nasm
 NASMOPT  = -O9999
-NFLAGS   = -dDATE='"$(DATE)"' -dWITH_EDD
+NFLAGS   = -dDATE='"$(DATE)"'
 NINCLUDE =
 
 SRCS	 = $(wildcard *.asm *.c *.h)
@@ -38,11 +38,11 @@ endif
 # Important: init.o16 must be first!!
 OBJS16   = init.o16 init32.o
 OBJS32   = start32.o setup.o msetup.o e820func.o conio.o memcpy.o memset.o \
-           unzip.o memdisk.o
+           unzip.o memdisk_chs.o memdisk_edd.o
 
 CSRC     = setup.c msetup.c e820func.c conio.c unzip.c
 SSRC     = start32.S memcpy.S memset.S
-NASMSRC  = memdisk.asm memdisk16.asm
+NASMSRC  = memdisk_chs.asm memdisk_edd.asm memdisk16.asm
 
 all: memdisk # e820test
 
@@ -56,7 +56,7 @@ clean: tidy
 spotless: clean
 	rm -f memdisk .depend
 
-%.o: %.asm
+memdisk16.o: memdisk16.asm
 	$(NASM) $(NASMOPT) $(NFLAGS) $(NINCLUDE) -f elf -l $*.lst -o $@ $<
 
 %.o: %.s
@@ -92,11 +92,14 @@ spotless: clean
 %.bin: %.asm
 	$(NASM) -f bin $(NASMOPT) $(NFLAGS) $(NINCLUDE) -o $@ -l $*.lst $<
 
+memdisk_%.o: memdisk_%.bin
+	$(LD) -r -b binary -o $@ $<
+
 memdisk16.elf: $(OBJS16)
 	$(LD) -Ttext 0 -o $@ $^
 
-memdisk32.elf: $(OBJS32)
-	$(LD) -Ttext 0x100000 -o $@ $^
+memdisk32.elf: memdisk.ld $(OBJS32)
+	$(LD) -o $@ -T $^
 
 %.bin: %.elf
 	$(OBJCOPY) -O binary $< $@
@@ -107,14 +110,14 @@ memdisk: memdisk16.bin memdisk32.bin postprocess.pl
 e820test: e820test.c e820func.c msetup.c
 	$(CC) -m32 -g -W -Wall -DTEST -o $@ $^
 
-memdisk.o: memdisk.bin
-	$(LD) -r -b binary -o $@ $<
-
 .depend:
 	rm -f .depend
-	for csrc in *.c ; do $(CC) $(INCLUDE) $(CFLAGS) -MM $$csrc >> .depend ; done
-	for ssrc in *.S ; do $(CC) $(INCLUDE) $(SFLAGS) -MM $$ssrc >> .depend ; done
-	for nsrc in $(NASMSRC) ; do $(NASM) -DDEPEND $(NINCLUDE) -o `echo $$nsrc | sed -e 's/\.asm/\.bin/'` -M $$nsrc >> .depend ; done
+	for csrc in *.c ; do $(CC) $(INCLUDE) $(CFLAGS) -MM $$csrc >> .depend ; done ; true
+	for ssrc in *.S ; do $(CC) $(INCLUDE) $(SFLAGS) -MM $$ssrc >> .depend ; done ; true
+	for nsrc in $(NASMSRC) ; do \
+		( $(NASM) -DDEPEND $(NINCLUDE) -o \
+		  `echo $$nsrc | sed -e 's/\.asm/\.bin/'` -M $$nsrc ; \
+		  echo '' ) >> .depend ; done ; true
 
 depend:
 	rm -f .depend
@@ -124,4 +127,4 @@ depend:
 setup.s: ../version
 
 # Include dependencies file
-include .depend
+-include .depend
