@@ -431,7 +431,7 @@ int load_memory_map(unsigned long data_len,
 	unsigned long* dest_pfn = NULL;
 
 	unsigned int pfn_read = 0;
-	unsigned long start_range_pfn = 0;
+	long start_range_pfn = -1;
 	unsigned long prev_dest_pfn = 0;
 
 	/* lzf support */
@@ -604,7 +604,7 @@ read_buf_size_pagedir1:
 		 * For a regular file with ~10K pages, this optimization reduces
 		 * the number of chunks to shuffle to ~600.
 		 */
-		if (!start_range_pfn || prev_dest_pfn == *dest_pfn - 1) {
+		if (start_range_pfn == -1 || prev_dest_pfn == *dest_pfn - 1) {
 save_dest_pfn:
 			/* We have found another contiguous pfn, carry on */
 			add_entry_list(&data_buffers_list,
@@ -612,7 +612,7 @@ save_dest_pfn:
 				       data_buffer, *dest_pfn);
 
 			/* This happens only when creating a new range */
-			if (!start_range_pfn)
+			if (start_range_pfn == -1)
 				start_range_pfn = *dest_pfn;
 
 			prev_dest_pfn = *dest_pfn;
@@ -634,8 +634,8 @@ extract_restore_list:
 			 * and restart to read_dest_pfn.
 			 */
 #ifdef METADATA_DEBUG
-			dprintf("\nPFNs restore range %lu..%lu found. New one "
-				"will start at: %lu\n",
+			dprintf("\nPFNs restore range %lu..%lu found. "
+				"Next pfn to restore: %lu\n",
 				start_range_pfn, prev_dest_pfn, *dest_pfn);
 			dump_restore_list(data_buffers_list);
 #endif /* METADATA_DEBUG */
@@ -655,7 +655,6 @@ extract_restore_list:
 			extract_data_from_list(&data_buffers_list,
 					       (char *) shuffling_load_addr);
 
-			/* XXX Check it is absolute pfns and not zone offsets */
 			if(memory_map_add(start_range_pfn,
 					  prev_dest_pfn,
 					  (addr_t) shuffling_load_addr,
@@ -683,7 +682,7 @@ extract_restore_list:
 				 * Start looking for a new range after saving the
 				 * current dest_pfn.
 				 */
-				start_range_pfn = 0;
+				start_range_pfn = -1;
 				goto save_dest_pfn;
 			}
 		}
