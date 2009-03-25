@@ -37,6 +37,7 @@ struct syslinux_movelist *ml = NULL;
 extern void (*trampoline) (void);
 
 extern unsigned long __nosave_begin;
+extern size_t trampoline_size, boot_data_size;
 
 /**
  * memory_map_add - relocate a range of pfns
@@ -78,7 +79,8 @@ static int memory_map_add(unsigned long start_range_pfn,
 	addr_t dsize;
 
 	/*
-	 * This portion is not available (used by syslinux)
+	 * This portion is not available (either used by syslinux
+	 * if lower than 0x7c00 or used by our boot page tables).
 	 * We can ask the kernel to reserve the first 64K of
 	 * the memory (technically for BIOS bugs). See:
 	 *
@@ -91,11 +93,14 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	// XXX BUG
-	while (final_load_addr <= 0x7c00) {
+	while (final_load_addr <= 0x8000 + boot_data_size &&
+	       final_start_range_pfn <= final_end_range_pfn) {
 		/* Debug info */
 		(*syslinux_reserved)++;
 
 		/* Skip this pfn */
+		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_start_range_pfn,
+							       __pfn_to_phys(final_start_range_pfn));
 		final_start_range_pfn++;
 		final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	}
@@ -122,6 +127,44 @@ static int memory_map_add(unsigned long start_range_pfn,
 		/* Skip this pfn */
 		final_end_range_pfn--;
 		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
+	}
+
+	/* Don't restore __nosave_data */
+	// XXX Why is this saved in the first place?
+	while (final_load_addr >= __nosave_begin &&
+	       final_load_addr < __nosave_begin + trampoline_size &&
+	       final_start_range_pfn <= final_end_range_pfn) {
+		/* Debug info */
+		(*syslinux_reserved)++;
+
+		/* Skip this pfn */
+		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_start_range_pfn,
+							       __pfn_to_phys(final_start_range_pfn));
+		final_start_range_pfn++;
+		final_load_addr = __pfn_to_phys(final_start_range_pfn);
+	}
+	while (final_upper_addr >= __nosave_begin &&
+	       final_upper_addr < __nosave_begin + trampoline_size &&
+	       final_start_range_pfn <= final_end_range_pfn) {
+		/* Debug info */
+		(*syslinux_reserved)++;
+
+		/* Skip this pfn */
+		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_end_range_pfn,
+							       __pfn_to_phys(final_end_range_pfn));
+		final_end_range_pfn--;
+		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
+	}
+
+	/* Skip the entire section */
+	if (final_end_range_pfn < final_start_range_pfn) {
+		nb_of_pfns = (end_range_pfn - start_range_pfn + 1);
+		dsize = PAGE_SIZE * nb_of_pfns;
+		printf("Skipping 0x%08x 0x%08x (len 0x%08x) %lu-%lu\n",
+			__pfn_to_phys(start_range_pfn),
+			__pfn_to_phys(end_range_pfn), dsize,
+			start_range_pfn, end_range_pfn);
+		return 0;
 	}
 
 	/*
@@ -152,6 +195,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * This output is similar to syslinux_dump_movelist() (in reverse order
 	 * though).
 	 */
+	dprintf("    TO        FROM       SIZE\n");
 	dprintf("0x%08x 0x%08x 0x%08x %lu-%lu\n",
 		final_load_addr, data_location, dsize,
 		final_start_range_pfn, final_end_range_pfn);
@@ -166,9 +210,11 @@ static int memory_map_add(unsigned long start_range_pfn,
 		 * SMT_UNDEFINED), this is probably because there is not enough
 		 * RAM. Typical mistake in a VM with only 256M.
 		 */
-		printf("BUG: Memory segment at 0x%08x (len %08x) is "
-		       "unavailable: error=%d\n",
-		       final_load_addr, dsize,
+		printf("BUG: Memory segment 0x%08x..0x%08x\n"
+		       "(len 0x%08x - %d pages - "
+		       "%d M) is unavailable: error=%d\n",
+		       final_load_addr, final_load_addr + dsize, dsize,
+		       dsize >> PAGE_SHIFT, (dsize >> 10) >> 10,
 		       syslinux_memmap_type(amap, final_load_addr, dsize));
 		goto bail;
 	}

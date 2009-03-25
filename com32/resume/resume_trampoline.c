@@ -59,10 +59,9 @@ extern const unsigned long __nosave_end;
  *
  * To do this, a blob of code malloc'ed is mapped to 0x7c00.
  **/
+size_t trampoline_size, boot_data_size;
 int setup_trampoline_blob(void)
 {
-	size_t trampoline_size, boot_data_size;
-
 	trampoline_size = (void *)&trampoline_end -
 			  (void *)&trampoline_start;
 
