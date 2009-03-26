@@ -37,6 +37,7 @@ extern unsigned long saved_context_ebx;
 extern unsigned long saved_context_esi;
 extern unsigned long saved_context_edi;
 extern unsigned long saved_context_eflags;
+extern unsigned long saved_mmu_cr4_features;
 extern unsigned long __nosave_begin;
 extern unsigned long __nosave_end;
 
@@ -49,6 +50,7 @@ struct swsusp_symbl_info sym_info[] =
     {"saved_context_edi",       &saved_context_edi},
     {"saved_context",           &saved_context_state},
     {"saved_context_eflags",    &saved_context_eflags},
+    {"mmu_cr4_features",        &saved_mmu_cr4_features},
     {"swapper_pg_dir",          &saved_swapper_pg_dir},
     {"idt_table",               &saved_context_idt},
     {"__nosave_begin",          &__nosave_begin},
@@ -160,7 +162,7 @@ static int get_kernel_symbl(void)
  **/
 int get_missing_symbols_from_saved_kernel(void)
 {
-	int symbols_to_match = 11;
+	int symbols_to_match = 12;
 	struct saved_context* state;
 
 	if (load_symbols_table())
@@ -174,8 +176,6 @@ int get_missing_symbols_from_saved_kernel(void)
 	/* Setup global variables for the trampoline */
 	state = (struct saved_context*) saved_context_state;
 	saved_idt_address = state->idt.address;
-	saved_cr4 = state->cr4;
-	//saved_cr3 = state->cr3;
 	saved_cr2 = state->cr2;
 	saved_cr0 = state->cr0;
 

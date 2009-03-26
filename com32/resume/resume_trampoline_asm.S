@@ -28,7 +28,6 @@
 #define __PAGE_OFFSET			0xC0000000
 
 /* CPU definitions. See arch/x86/include/asm/processor-flags.h */
-#define X86_CR4_PAE	0x00000020 /* enable physical address extensions */
 #define X86_CR4_PGE	0x00000080 /* enable global pages */
 
 #define __SYSLINUX_CS			0x20
@@ -46,6 +45,7 @@
 .global saved_context_esi
 .global saved_context_edi
 .global saved_context_eflags
+.global saved_mmu_cr4_features
 .global saved_swapper_pg_dir
 .global saved_context_idt
 .global __nosave_begin
@@ -183,7 +183,7 @@ trampoline_start:
 	 * The first thing to do is to restore the page directory to its
 	 * proper value. This will give us access to the saved_context_* data.
 	 *
-	 * XXX SMP: turn on paging options (PSE, PAE, ...) - reload cr4?
+	 * XXX SMP: turn on paging options (PSE, PAE, ...)
 	 */
 	movl pa(saved_swapper_pg_dir),%ecx
 	movl %ecx,%cr3
@@ -191,7 +191,9 @@ trampoline_start:
 
 3:
 	/* Flush TLB, including "global" things (vmalloc) */
-	movl pa2(mmu_cr4_features)+__PAGE_OFFSET, %ecx
+	movl pa2(saved_mmu_cr4_features)+__PAGE_OFFSET,%eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%ecx
 	jecxz 1f			# cr4 Pentium and higher, skip if zero
 	movl %ecx, %edx
 	andl $~(X86_CR4_PGE),%edx
@@ -274,14 +276,8 @@ saved_context_edi:
 	.long	0
 saved_context_eflags:
 	.long	0
-
-#if !defined(CONFIG_X86_PAE) || defined(CONFIG_X86_64)
-mmu_cr4_features:
+saved_mmu_cr4_features:
 	.long	0
-#else
-mmu_cr4_features:
-	.long	X86_CR4_PAE
-#endif
 
 idt_descr_reloc:
 	.word	IDT_ENTRIES*8-1
