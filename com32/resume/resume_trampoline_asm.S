@@ -249,7 +249,6 @@ trampoline_start:
 	 */
 	movl pa2(saved_context_eflags)+__PAGE_OFFSET, %eax
 	addl $__PAGE_OFFSET,%eax
-	hlt // XXX BROKEN
 	pushl (%eax)
 	popfl
 
