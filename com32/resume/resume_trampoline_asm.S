@@ -24,6 +24,7 @@
 #define __KERNEL_DS			(GDT_ENTRY_KERNEL_DS * 8)
 #define __USER_DS			(GDT_ENTRY_DEFAULT_USER_DS* 8 + 3)
 #define __USER_CS			(GDT_ENTRY_DEFAULT_USER_CS* 8 + 3)
+#define IDT_ENTRIES			256
 #define __PAGE_OFFSET			0xC0000000
 
 /* CPU definitions. See arch/x86/include/asm/processor-flags.h */
@@ -46,6 +47,7 @@
 .global saved_context_edi
 .global saved_context_eflags
 .global saved_swapper_pg_dir
+.global saved_context_idt
 .global __nosave_begin
 .global __nosave_end
 .global boot_data_start
@@ -139,17 +141,23 @@ trampoline_start:
 	ljmp $(__SYSLINUX_CS),$(pa2(1f)+__PAGE_OFFSET)
 
 1:
-	// XXX lidt?
 	// XXX lldt? Linux doesn't care about the LDT. Wine apps do though.
-	lidt pa2(idt_descr_reloc)
 
 	/*
-	 * We are still using the SYSLINUX gdt. Now is a good time to overwrite
-	 * it with the Linux' one.
+	 * We are still using the SYSLINUX idt/gdt. Now is a good time to overwrite
+	 * it with the Linux' ones.
 	 *
-	 * XXX Is there a way to reload it from the image instead of having
+	 * XXX Is there a way to reload the gdt from the image instead of having
 	 * to hardcode it here?
 	 */
+
+	/* We need to add __PAGE_OFFSET to the saved idt address */
+	movl pa2(idt_reloc)+__PAGE_OFFSET, %eax
+	movl (%eax),%ebx
+	addl $__PAGE_OFFSET,%ebx
+	movl %ebx, pa2(idt_reloc)+__PAGE_OFFSET
+	lidt pa2(idt_descr_reloc)
+
 	lgdt pa2(gdt_descr_reloc)
 
 	ljmp $(__KERNEL_CS),$pa2(2f)+__PAGE_OFFSET
@@ -252,6 +260,8 @@ trampoline_start:
 	ret
 
 /* Data that needs to be accessed after loading swapper_pg_dir */
+saved_context_idt:
+	.long	0
 saved_context_esp:
 	.long	0
 saved_context_ebp:
@@ -273,11 +283,10 @@ mmu_cr4_features:
 	.long	X86_CR4_PAE
 #endif
 
-
 idt_descr_reloc:
-	.word	0
+	.word	IDT_ENTRIES*8-1
 idt_reloc:
-	.long	0
+	.long	pa2(saved_context_idt)+__PAGE_OFFSET	# idt address
 gdt_descr_reloc:
 	.word	0xf8
 gdt_reloc:

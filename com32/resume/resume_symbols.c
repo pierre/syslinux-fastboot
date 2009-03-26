@@ -30,6 +30,7 @@ static size_t data_len;
 
 /* See resume_trampoline_asm.S */
 extern unsigned long saved_swapper_pg_dir;
+extern unsigned long saved_context_idt;
 extern unsigned long saved_context_esp;
 extern unsigned long saved_context_ebp;
 extern unsigned long saved_context_ebx;
@@ -49,6 +50,7 @@ struct swsusp_symbl_info sym_info[] =
     {"saved_context",           &saved_context_state},
     {"saved_context_eflags",    &saved_context_eflags},
     {"swapper_pg_dir",          &saved_swapper_pg_dir},
+    {"idt_table",               &saved_context_idt},
     {"__nosave_begin",          &__nosave_begin},
     {"__nosave_end",            &__nosave_end},
     {"\0", 0},
@@ -158,7 +160,7 @@ static int get_kernel_symbl(void)
  **/
 int get_missing_symbols_from_saved_kernel(void)
 {
-	int symbols_to_match = 10;
+	int symbols_to_match = 11;
 	struct saved_context* state;
 
 	if (load_symbols_table())
