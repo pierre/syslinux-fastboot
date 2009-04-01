@@ -126,9 +126,10 @@ parse_cmdline:
 
 		; This either needs to have been an option with parameter,
 		; or be followed by EOL/whitespace
-		cmp byte [di-1],'='
+		mov ax,[es:di-1]		; AL = last chr; AH = following
+		cmp al,'='
 		je .is_match
-		cmp byte [di],' '
+		cmp ah,' '
 		ja .no_match
 .is_match:
 		pop ax				; Drop option pointer on stack
@@ -458,14 +459,12 @@ setup_move:
 		inc cx
 
 .no_initrd:
+		push dword run_linux_kernel
 		push cx				; Length of descriptor list
-		push word trackbuf
 
-		mov dword [EntryPoint],run_linux_kernel
 		; BX points to the final real mode segment, and will be loaded
 		; into DS.
 		jmp replace_bootstrap
-
 
 run_linux_kernel:
 ;

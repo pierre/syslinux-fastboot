@@ -497,6 +497,12 @@ void start_cli_mode(struct s_hardware *hardware)
 
 		case KEY_ENTER:
 			more_printf("\n");
+
+			/* We have to skip empty lines */
+			if (strlen(skipspace(cli.input))<1) {
+				reset_prompt(&cli);
+				break;
+			}
 			if (cli.history_pos == MAX_HISTORY_SIZE-1) cli.history_pos=1;
 			strncpy(cli.history[cli.history_pos],skipspace(cli.input),sizeof(cli.history[cli.history_pos]));
 			cli.history_pos++;
@@ -625,6 +631,11 @@ static void main_show_summary(struct s_hardware *hardware)
 		int argc = 2;
 		char *argv[2] = { "0", "0" };
 		show_dmi_memory_modules(argc, argv, hardware);
+		if (hardware->dmi.ipmi.filled==true) {
+			more_printf("IPMI baseboard v%u.%u present\n",
+			  hardware->dmi.ipmi.major_specification_version,
+			  hardware->dmi.ipmi.minor_specification_version);
+		}
 	}
 	main_show_pci(hardware);
 
