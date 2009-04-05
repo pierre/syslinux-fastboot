@@ -51,6 +51,9 @@
 .global saved_context_idt
 .global __nosave_begin
 .global __nosave_end
+.global toi_bkd_address
+.global toi_in_hibernate_address
+.global in_suspend_address
 .global boot_data_start
 .global boot_data_end
 
@@ -358,6 +361,12 @@ saved_swapper_pg_dir:
 __nosave_begin:
 	.long	0
 __nosave_end:
+	.long	0
+toi_bkd_address:
+	.long	0
+toi_in_hibernate_address:
+	.long	0
+in_suspend_address:
 	.long	0
 
 /*
