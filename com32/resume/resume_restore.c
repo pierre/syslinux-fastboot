@@ -92,8 +92,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * Anything below 0x100000 is marked as NoSave, isn't it?
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	// XXX BUG
-	while (final_load_addr <= 0x8000 + boot_data_size &&
+	while (final_load_addr <= BOOT_DATA_ADDR + boot_data_size &&
 	       final_start_range_pfn <= final_end_range_pfn) {
 		/* Debug info */
 		(*syslinux_reserved)++;
@@ -143,8 +142,9 @@ static int memory_map_add(unsigned long start_range_pfn,
 		final_start_range_pfn++;
 		final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	}
-	while (final_upper_addr >= __nosave_begin &&
-	       final_upper_addr < __nosave_begin + trampoline_size &&
+
+	while (final_upper_addr >= TRAMPOLINE_ADDR &&
+	       final_upper_addr < TRAMPOLINE_ADDR + trampoline_size &&
 	       final_start_range_pfn <= final_end_range_pfn) {
 		/* Debug info */
 		(*syslinux_reserved)++;
@@ -710,8 +710,8 @@ extract_restore_list:
 
 	/* Set up registers */
 	memset(&regs, 0, sizeof regs);
-	regs.eip = __nosave_begin;
-	regs.ebx = __nosave_begin;
+	regs.eip = TRAMPOLINE_ADDR;
+	regs.ebx = TRAMPOLINE_ADDR;
 
 #ifdef METADATA_DEBUG
 	dprintf("Final memory map:\n");

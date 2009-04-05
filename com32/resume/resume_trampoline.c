@@ -65,39 +65,39 @@ int setup_trampoline_blob(void)
 	trampoline_size = (void *)&trampoline_end -
 			  (void *)&trampoline_start;
 
-	if (syslinux_memmap_type(amap, __nosave_begin,
+	if (syslinux_memmap_type(amap, TRAMPOLINE_ADDR,
 				 trampoline_size) != SMT_FREE)
 		return -1;
 
-	if (syslinux_add_memmap(&amap, __nosave_begin,
+	if (syslinux_add_memmap(&amap, TRAMPOLINE_ADDR,
 				trampoline_size, SMT_ALLOC))
 		return -1;
 
-	if (syslinux_add_movelist(&ml, __nosave_begin,
+	if (syslinux_add_movelist(&ml, TRAMPOLINE_ADDR,
 				  (addr_t) trampoline_start, trampoline_size))
 		return -1;
 
 	dprintf("Trampoline (size %#8.8x) relocated at [0x%08x .. 0x%08lx]\n",
-		 trampoline_size, (addr_t) __nosave_begin,
-		__nosave_begin + trampoline_size);
+		 trampoline_size, (addr_t) TRAMPOLINE_ADDR,
+		 TRAMPOLINE_ADDR + trampoline_size);
 
 	boot_data_size = (void *)&boot_data_end -
 			 (void *)&boot_data_start;
 
-	if (syslinux_memmap_type(amap, 0x8000,
+	if (syslinux_memmap_type(amap, BOOT_DATA_ADDR,
 				 boot_data_size) != SMT_FREE)
 		return -1;
 
-	if (syslinux_add_memmap(&amap, 0x8000,
+	if (syslinux_add_memmap(&amap, BOOT_DATA_ADDR,
 				boot_data_size, SMT_ALLOC))
 		return -1;
 
-	if (syslinux_add_movelist(&ml, 0x8000,
+	if (syslinux_add_movelist(&ml, BOOT_DATA_ADDR,
 				  (addr_t) boot_data_start, boot_data_size))
 		return -1;
 
-	dprintf("Boot  data (size %#8.8x) relocated at [0x00008000 .. 0x%08x]\n",
-		 boot_data_size, 0x8000 + boot_data_size);
+	dprintf("Boot  data (size %#8.8x) relocated at [0x%08x .. 0x%08x]\n",
+		 boot_data_size, BOOT_DATA_ADDR, BOOT_DATA_ADDR + boot_data_size);
 
 	return 0;
 }
