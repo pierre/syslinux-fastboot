@@ -18,7 +18,9 @@
 #include <syslinux/bootrm.h>
 
 #include "resume.h"
+#include "resume_asm.h"
 #include "resume_linux.h"
+#include "resume_tuxonice.h"
 #include "resume_debug.h"
 #include "resume_symbols.h"
 #include "resume_trampoline.h"
@@ -90,9 +92,11 @@ int setup_trampoline_blob(void)
 				  (addr_t) trampoline_start, trampoline_size))
 		return -1;
 
-	dprintf("Trampoline (size %#8.8x) relocated at [0x%08x .. 0x%08lx]\n",
+	dprintf("Trampoline       (size %#8.8x): [0x%08x .. 0x%08lx] (%lu -> %lu)\n",
 		 trampoline_size, (addr_t) TRAMPOLINE_ADDR,
-		 TRAMPOLINE_ADDR + trampoline_size);
+		 TRAMPOLINE_ADDR + trampoline_size,
+		 __phys_to_pfn((addr_t) TRAMPOLINE_ADDR),
+		 __phys_to_pfn(TRAMPOLINE_ADDR + trampoline_size));
 
 	boot_data_size = (void *)&boot_data_end -
 			 (void *)&boot_data_start;
@@ -109,8 +113,10 @@ int setup_trampoline_blob(void)
 				  (addr_t) boot_data_start, boot_data_size))
 		return -1;
 
-	dprintf("Boot  data (size %#8.8x) relocated at [0x%08x .. 0x%08x]\n",
-		 boot_data_size, BOOT_DATA_ADDR, BOOT_DATA_ADDR + boot_data_size);
+	dprintf("Boot data        (size %#8.8x): [0x%08x .. 0x%08x] (%lu -> %lu)\n",
+		 boot_data_size, BOOT_DATA_ADDR, BOOT_DATA_ADDR + boot_data_size,
+		 __phys_to_pfn(BOOT_DATA_ADDR),
+		 __phys_to_pfn(BOOT_DATA_ADDR + boot_data_size));
 
 	/* Setup data needed by TuxOnIce */
 	if (syslinux_memmap_type(amap, toi_bkd_address,
@@ -125,8 +131,10 @@ int setup_trampoline_blob(void)
 				  (addr_t) &toi_bkd, sizeof(toi_bkd)))
 		return -1;
 
-	dprintf("toi_bkd (size %#8.8x) relocated at [0x%08x .. 0x%08x]\n",
-		 sizeof(toi_bkd), toi_bkd_address, toi_bkd_address + sizeof(toi_bkd));
+	dprintf("toi_bkd          (size %#8.8x): [0x%08x .. 0x%08x] (%lu -> %lu)\n",
+		 sizeof(toi_bkd), toi_bkd_address, toi_bkd_address + sizeof(toi_bkd),
+		 __phys_to_pfn(toi_bkd_address),
+		 __phys_to_pfn(toi_bkd_address + sizeof(toi_bkd)));
 
 	if (syslinux_memmap_type(amap, toi_in_hibernate_address,
 				 sizeof(toi_in_hibernate)) != SMT_FREE)
@@ -140,9 +148,11 @@ int setup_trampoline_blob(void)
 				  (addr_t) &toi_in_hibernate, sizeof(toi_in_hibernate)))
 		return -1;
 
-	dprintf("toi_in_hibernate (size %#8.8x) relocated at [0x%08x .. 0x%08x]\n",
+	dprintf("toi_in_hibernate (size %#8.8x): [0x%08x .. 0x%08x] (%lu -> %lu)\n",
 		 sizeof(toi_in_hibernate), toi_in_hibernate_address,
-		 toi_in_hibernate_address + sizeof(toi_in_hibernate));
+		 toi_in_hibernate_address + sizeof(toi_in_hibernate),
+		 __phys_to_pfn(toi_in_hibernate_address),
+		 __phys_to_pfn(toi_in_hibernate_address + sizeof(toi_in_hibernate)));
 
 	/* Needed by swsusp */
 	if (syslinux_memmap_type(amap, in_suspend_address,
@@ -157,10 +167,11 @@ int setup_trampoline_blob(void)
 				  (addr_t) &in_suspend, sizeof(in_suspend)))
 		return -1;
 
-	dprintf("in_suspend (size %#8.8x) relocated at [0x%08x .. 0x%08x]\n",
+	dprintf("in_suspend       (size %#8.8x): [0x%08x .. 0x%08x] (%lu -> %lu)\n",
 		 sizeof(in_suspend), in_suspend_address,
-		 in_suspend_address + sizeof(in_suspend));
-
+		 in_suspend_address + sizeof(in_suspend),
+		 __phys_to_pfn(in_suspend_address),
+		 __phys_to_pfn(in_suspend_address + sizeof(in_suspend)));
 
 	return 0;
 }

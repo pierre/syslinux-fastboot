@@ -731,7 +731,7 @@ extract_restore_list:
 	 * then restore the registers and page tables before jumping into the
 	 * kernel.
 	 */
-	fputs("Setting up protected mode...\n", stdout);
+	dprintf("Setting up protected mode...\n");
 	syslinux_shuffle_boot_pm(ml, mmap, 0, &regs);
 
 	/* If here, not in PM, give up. */
