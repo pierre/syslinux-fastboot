@@ -20,6 +20,11 @@
 
 #define DEBUG
 
+/*
+ * Note on METADATA_DEBUG: if too much stuff is spit on the console (>15K lines),
+ * some memory corruption appears running Qemu and the restore code will fail.
+ */
+
 #ifdef DEBUG
 
 #include "resume_tuxonice.h"
