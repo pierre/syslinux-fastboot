@@ -60,6 +60,10 @@
 .text
 
 /*
+ * XXX TODO: restore toi_bkd, toi_in_hibernate and restore_highmem_pblist
+ */
+
+/*
  * Start of our text segment (it will be relocated at __nosave_begin).
  *
  * WARNING!
@@ -143,8 +147,11 @@ trampoline_start:
 	 * eip.
 	 */
 	movl %eax,%cr0
-	/* PAGING enabled */
 
+	/*
+	 * PAGING enabled: if it comes here, this means the mapping to
+	 * access the trampoline before reloading swapper_pg_dir works
+	 */
 	/* We need to relocate ourselves in the kernel address space */
 	ljmp $(__SYSLINUX_CS),$(pa2(1f)+__PAGE_OFFSET)
 
@@ -190,6 +197,11 @@ trampoline_start:
 	 *
 	 * The first thing to do is to restore the page directory to its
 	 * proper value. This will give us access to the saved_context_* data.
+	 *
+	 * Note: if this fails with e.g.
+	 * qemu: fatal: Trying to execute code outside RAM or ROM at 0xc146c098
+	 * (CR2 == 0), this is because the virtual machine doesn't have enough
+	 * RAM (tweak -m).
 	 *
 	 * XXX SMP: turn on paging options (PSE, PAE, ...)
 	 */
@@ -285,6 +297,7 @@ saved_context_eflags:
 	.long	0
 saved_mmu_cr4_features:
 	.long	0
+
 
 idt_descr_reloc:
 	.word	IDT_ENTRIES*8-1
