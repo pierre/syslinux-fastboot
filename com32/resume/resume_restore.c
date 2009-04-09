@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lzo/minilzo.h"
+
 #ifndef TESTING
 #include <syslinux/movebits.h>
 #include <syslinux/bootpm.h>
@@ -26,7 +28,6 @@
 #include "resume_debug.h"
 #include "resume_restore.h"
 #include "resume_bitmaps.h"
-#include "resume_lzf.h"
 #include "resume_symbols.h"
 
 #ifndef TESTING
@@ -570,10 +571,11 @@ read_buf_size_pagedir1:
 			unsigned int uncompr_len;
 			int error;
 
-			error = lzf_decompress(data_load_addr,
-					       *data_buffer_size,
-					       uncompr_tmp,
-					       &uncompr_len);
+			error = lzo1x_decompress((lzo_bytep) data_load_addr,
+						 (lzo_uint) *data_buffer_size,
+						 (lzo_bytep) uncompr_tmp,
+						 (lzo_uintp) &uncompr_len,
+						 NULL);
 			if (uncompr_len != PAGE_SIZE) {
 				printf("BUG: error when uncompressing data.\n");
 				if (uncompr_len)
