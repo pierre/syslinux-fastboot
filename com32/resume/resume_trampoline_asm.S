@@ -202,9 +202,16 @@ trampoline_start:
 	 * qemu: fatal: Trying to execute code outside RAM or ROM at 0xc146c098
 	 * (CR2 == 0), this is because the virtual machine doesn't have enough
 	 * RAM (tweak -m).
+	 * Note2: cr4 needs to be restored first! Otherwise, restoring cr3 is
+	 * likely to triple fault with CR2 == 0.
 	 *
 	 * XXX SMP: turn on paging options (PSE, PAE, ...)
 	 */
+	movl pa2(saved_mmu_cr4_features)+__PAGE_OFFSET,%eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%ecx
+	movl %ecx,%cr4
+
 	movl pa(saved_swapper_pg_dir),%ecx
 	movl %ecx,%cr3
 	ljmp $(__KERNEL_CS),$(pa2(3f)+__PAGE_OFFSET)
