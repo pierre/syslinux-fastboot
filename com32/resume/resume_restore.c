@@ -314,6 +314,9 @@ static int skip_pagedir2(long pagedir2_size)
 	unsigned long* dest_pfn = NULL;
 	unsigned int* data_buffer_size;
 
+	if (!pagedir2_size)
+		return 0;
+
 	/* pagedir2 is PAGE_SIZE aligned */
 	do {
 		MOVE_TO_NEXT_PAGE
