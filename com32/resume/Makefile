@@ -37,6 +37,9 @@ all: $(MODULES) $(LIB)
 test:
 	@bash resume_test.sh
 
+create_hibernate_image:
+	@bash resume_test.sh create
+
 resume.elf: resume_restore.o resume_parser.o resume_debug.o \
 	    resume_trampoline.o resume_bitops.o resume_bitmaps.o \
 	    resume.o resume_symbols.o resume_trampoline_asm.o \
