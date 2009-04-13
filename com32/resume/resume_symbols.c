@@ -117,7 +117,6 @@ static int get_kernel_symbl(void)
 #ifdef METADATA_DEBUG
 	dprintf("%lx", address);
 #endif /* METADATA_DEBUG */
-	free(s_address);
 
 	/* Skip symbol type */
 	symbols_table_posn += 3 * sizeof(char);
@@ -188,8 +187,6 @@ int get_missing_symbols_from_saved_kernel(void)
 	/*
 	 * Don't bother free'ing the memory, we are about to rewrite the Memory
 	 * Map anyway.
-	 * XXX Actually, if I don't free it, it crashes!
 	 */
-	free(symbols_table_buffer);
 	return symbols_to_match;
 }
