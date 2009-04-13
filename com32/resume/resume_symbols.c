@@ -72,7 +72,7 @@ static int load_symbols_table(void)
 	void *data;
 
 	fputs("Loading System.map...", stdout);
-	if (zloadfile("System.map", &data, &data_len)) {
+	if (loadfile("System.map", &data, &data_len)) {
 		printf("failed!\n");
 		return 1;
 	}

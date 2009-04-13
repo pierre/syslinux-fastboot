@@ -35,7 +35,7 @@ if [[ -n $VMW ]]; then
 else
 	RAW=$VM_ROOT/debian_lenny_i386_small.img
 	OFFSET=$((63*512))
-	QEMU="qemu -no-kqemu -m $RAM_SIZE -hda $RAW -serial file:$SERIAL"
+	QEMU="qemu -smp 1 -no-kqemu -m $RAM_SIZE -hda $RAW -serial file:$SERIAL"
 	trap "exit 1" SIGINT SIGTERM
 fi
 
@@ -61,7 +61,7 @@ function test_resume_c32
 function create_hibernate_image
 {
 	echo "  QEMU    $RAW"
-	$QEMU	-append "resume=file:/dev/sda1:$TOI_FILE_OFFSET console=tty0 console=ttyS0 root=/dev/sda1" \
+	$QEMU	-append "noresume resume=file:/dev/sda1:$TOI_FILE_OFFSET console=tty0 console=ttyS0 root=/dev/sda1" \
 		-kernel "$KERNEL"
 
 	# Create the hibernate image by... hibernating the VM!

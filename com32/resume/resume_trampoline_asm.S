@@ -305,7 +305,6 @@ saved_context_eflags:
 saved_mmu_cr4_features:
 	.long	0
 
-
 idt_descr_reloc:
 	.word	IDT_ENTRIES*8-1
 idt_reloc:
@@ -314,6 +313,11 @@ gdt_descr_reloc:
 	.word	0xf8
 gdt_reloc:
 	.long	pa2(gdt_table_reloc)+__PAGE_OFFSET	# gdt address
+/*
+ * The base addresses of the GDT shuld be aligned on an eight-byte boundary
+ * to yield the best processor performance.
+ */
+.org 0x400
 gdt_table_reloc:
 	.quad 0x0000000000000000	/* NULL descriptor */
 	.quad 0x0000000000000000	/* 0x0b reserved */

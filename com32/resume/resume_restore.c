@@ -259,7 +259,7 @@ static void extract_data_from_list(struct data_buffers_list** orig_list,
 	int i = 0;
 	struct data_buffers_list* list = *orig_list;
 
-	while (list != NULL) {
+	while (list) {
 		if (list->next) {
 			list = list->next;
 			memmove(shuffling_load_addr + i, list->prev->data,
@@ -613,7 +613,7 @@ extract_restore_list:
 			 * and restart to read_dest_pfn.
 			 */
 #ifdef METADATA_DEBUG
-			dprintf("\nPFNs restore range %lu..%lu found. "
+			dprintf("PFNs restore range %lu..%lu found. "
 				"Next pfn to restore: %lu\n",
 				start_range_pfn, prev_dest_pfn, *dest_pfn);
 			dump_restore_list(data_buffers_list);
