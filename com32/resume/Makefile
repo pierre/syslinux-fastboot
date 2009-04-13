@@ -27,8 +27,7 @@ INCLUDES	:= -I$(com32)/include
 
 LIBS		:= $(LIBGCC) \
 		   $(com32)/libutil/libutil_com.a \
-		   $(com32)/lib/libcom32.a \
-		   lzo/minilzo.o
+		   $(com32)/lib/libcom32.a
 
 LDFLAGS		:= -m elf_i386 -T $(com32)/lib/com32.ld
 
@@ -43,6 +42,7 @@ create_hibernate_image:
 resume.elf: resume_restore.o resume_parser.o resume_debug.o \
 	    resume_trampoline.o resume_bitops.o resume_bitmaps.o \
 	    resume.o resume_symbols.o resume_trampoline_asm.o \
+	    lzo/minilzo.o \
 	    $(LIBS)
 	@echo "  LD      $@"
 	@$(LD) $(LDFLAGS) -o $@ $^
