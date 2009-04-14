@@ -51,8 +51,11 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 #endif /* DYN_PAGEFLAGS */
 
 	READ_BUFFER(toi_file_header, struct toi_file_header*);
-	/* We only attempt to resume if the magic binary signature is found */
-	if (!parse_signature(toi_file_header)) {
+	/*
+	 * We only attempt to resume if the magic binary signature is found and
+	 * if an image is marked as present.
+	 */
+	if (!parse_signature(toi_file_header) || !toi_file_header->have_image) {
 		error("Invalid TuxOnIce file.\n");
 		goto bail;
 	}
