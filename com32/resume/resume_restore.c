@@ -79,21 +79,9 @@ static int memory_map_add(unsigned long start_range_pfn,
 	/* Size of the data to shuffle */
 	addr_t dsize;
 
-	/*
-	 * This portion is not available (either used by syslinux
-	 * if lower than 0x7c00 or used by our boot page tables).
-	 * We can ask the kernel to reserve the first 64K of
-	 * the memory (technically for BIOS bugs). See:
-	 *
-	 *	X86_RESERVE_LOW_64K
-	 *	git: fc38151947477596aa27df6c4306ad6008dc6711
-	 *
-	 * You need a 2.6.28 kernel or more recent.
-	 *
-	 * Anything below 0x100000 is marked as NoSave, isn't it?
-	 */
+	/* This portion is not available (used by syslinux) */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	while (final_load_addr < 0x7c00 &&
+	while (final_load_addr < 0x2000 &&
 	       final_start_range_pfn <= final_end_range_pfn) {
 		/* Debug info */
 		(*syslinux_reserved)++;
