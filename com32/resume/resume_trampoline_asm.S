@@ -218,8 +218,7 @@ trampoline_start:
 	 * XXX SMP: turn on paging options (PSE, PAE, ...)
 	 */
 	movl pa2(saved_mmu_cr4_features)+__PAGE_OFFSET,%eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%ecx
+	movl __PAGE_OFFSET(%eax),%ecx
 	movl %ecx,%cr4
 
 	movl pa(saved_swapper_pg_dir),%ecx
@@ -229,8 +228,7 @@ trampoline_start:
 3:
 	/* Flush TLB, including "global" things (vmalloc) */
 	movl pa2(saved_mmu_cr4_features)+__PAGE_OFFSET,%eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%ecx
+	movl __PAGE_OFFSET(%eax),%ecx
 	jecxz 1f			# cr4 Pentium and higher, skip if zero
 	movl %ecx, %edx
 	andl $~(X86_CR4_PGE),%edx
@@ -258,24 +256,20 @@ trampoline_start:
 	 * (36 bytes)
 	 */
 	movl pa2(saved_context_esp)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%esp
+	movl __PAGE_OFFSET(%eax),%esp
+
 	movl pa2(saved_context_ebp)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%ebp
+	movl __PAGE_OFFSET(%eax),%ebp
 
 	/* Restore general purpose registers (likely to be zeroed) */
 	movl pa2(saved_context_ebx)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%ebx
+	movl __PAGE_OFFSET(%eax),%ebx
 
 	/* Restore index registers (likely to be zeroed) */
 	movl pa2(saved_context_esi)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%esi
+	movl __PAGE_OFFSET(%eax),%esi
 	movl pa2(saved_context_edi)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	movl (%eax),%edi
+	movl __PAGE_OFFSET(%eax),%edi
 
 	/*
 	 * Restore the flags
@@ -285,8 +279,7 @@ trampoline_start:
 	 *                            IE ZF AF PF
 	 */
 	movl pa2(saved_context_eflags)+__PAGE_OFFSET, %eax
-	addl $__PAGE_OFFSET,%eax
-	pushl (%eax)
+	pushl __PAGE_OFFSET(%eax)
 	popfl
 
 	/* Cleanup */
