@@ -113,8 +113,18 @@ function update_system_map
 	umount_vm
 }
 
+function update_extlinux
+{
+	mount_vm
+	echo "  EXTLINUX $MNT_PNT"
+	sudo ../../extlinux/extlinux -U "$MNT_PNT"
+	umount_vm
+}
+
 if [[ $1 == 'create' ]]; then
 	create_hibernate_image
+elif [[ $1 == 'extlinux' ]]; then
+	update_extlinux
 else
 	test_resume_c32
 fi

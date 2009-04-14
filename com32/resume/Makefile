@@ -36,6 +36,9 @@ all: $(MODULES) $(LIB)
 test:
 	@bash resume_test.sh
 
+update_extlinux:
+	@bash resume_test.sh extlinux
+
 create_hibernate_image:
 	@bash resume_test.sh create
 
