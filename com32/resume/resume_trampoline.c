@@ -73,8 +73,8 @@ struct toi_boot_kernel_data toi_bkd = {
  * To do this, a blob of code malloc'ed is mapped to 0x7c00.
  **/
 size_t trampoline_size, boot_data_size;
-int toi_in_hibernate = 1;
-int in_suspend = 1;
+int toi_in_hibernate = 0;
+int in_suspend = 0;
 int setup_trampoline_blob(void)
 {
 	trampoline_size = (void *)&trampoline_end -
