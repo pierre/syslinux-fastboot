@@ -79,6 +79,16 @@ trampoline_start:
 	cli
 	cld
 
+	lgdt pa(boot_gdt_descr)
+	ljmp $(__BOOT_CS),$(pa2(1f))
+1:
+	movl $__BOOT_DS, %eax
+	movl %eax, %ss
+	movl %eax, %ds
+	movl %eax, %es
+	movl %eax, %fs
+	movl %eax, %gs
+
 	/*
 	 * Our first job is to turn on paging, but before, we need to
 	 * initialize our page tables.
@@ -153,7 +163,7 @@ trampoline_start:
 	 * access the trampoline before reloading swapper_pg_dir works
 	 */
 	/* We need to relocate ourselves in the kernel address space */
-	ljmp $(__SYSLINUX_CS),$(pa2(1f)+__PAGE_OFFSET)
+	ljmp $(__BOOT_CS),$(pa2(1f)+__PAGE_OFFSET)
 
 1:
 	// XXX lldt? Linux doesn't care about the LDT. Wine apps do though.
@@ -392,6 +402,14 @@ toi_in_hibernate_address:
 	.long	0
 in_suspend_address:
 	.long	0
+
+boot_gdt_descr:
+	.word __BOOT_DS+7
+	.long pa(boot_gdt)
+boot_gdt:
+	.fill GDT_ENTRY_BOOT_CS,8,0
+	.quad 0x00cf9a000000ffff	/* 0x60 kernel 4GB code at 0x00000000 */
+	.quad 0x00cf92000000ffff	/* 0x68 kernel 4GB data at 0x00000000 */
 
 /*
  * We need to do a double mapping of
