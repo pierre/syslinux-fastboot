@@ -171,9 +171,12 @@ struct new_utsname {
 	char domainname[65];
 };
 
+#define PAGE_MASK		(~(PAGE_SIZE-1))
+
 /*
  * Convert a physical address to a Page Frame Number and back
  */
 #define	__pfn_to_phys(pfn)	((pfn) << PAGE_SHIFT)
+#define	__phys_to_pfn(x)	(((unsigned long)(x) & PAGE_MASK) >> PAGE_SHIFT)
 
 #endif /* RESUME_LINUX_H */

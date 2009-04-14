@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lzo/minilzo.h"
+
 #ifndef TESTING
 #include <syslinux/movebits.h>
 #include <syslinux/bootpm.h>
@@ -26,7 +28,6 @@
 #include "resume_debug.h"
 #include "resume_restore.h"
 #include "resume_bitmaps.h"
-#include "resume_lzf.h"
 #include "resume_symbols.h"
 
 #ifndef TESTING
@@ -66,7 +67,7 @@ static int memory_map_add(unsigned long start_range_pfn,
 			  unsigned int* highmem_unreachable,
 			  unsigned int* mapped)
 {
-	unsigned int nb_of_pfns, i;
+	unsigned int nb_of_pfns;
 	unsigned long final_start_range_pfn = start_range_pfn;
 	unsigned long final_end_range_pfn = end_range_pfn;
 	addr_t data_location = data_addr;
@@ -92,15 +93,15 @@ static int memory_map_add(unsigned long start_range_pfn,
 	 * Anything below 0x100000 is marked as NoSave, isn't it?
 	 */
 	final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	// XXX BUG
-	while (final_load_addr <= 0x8000 + boot_data_size &&
+	while (final_load_addr < 0x7c00 &&
 	       final_start_range_pfn <= final_end_range_pfn) {
 		/* Debug info */
 		(*syslinux_reserved)++;
 
 		/* Skip this pfn */
-		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_start_range_pfn,
-							       __pfn_to_phys(final_start_range_pfn));
+		dprintf("Unable to restore pfn %d\t(0x%08x)\n",
+			final_start_range_pfn,
+			__pfn_to_phys(final_start_range_pfn));
 		final_start_range_pfn++;
 		final_load_addr = __pfn_to_phys(final_start_range_pfn);
 	}
@@ -129,65 +130,16 @@ static int memory_map_add(unsigned long start_range_pfn,
 		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
 	}
 
-	/* Don't restore __nosave_data */
-	// XXX Why is this saved in the first place?
-	while (final_load_addr >= __nosave_begin &&
-	       final_load_addr < __nosave_begin + trampoline_size &&
-	       final_start_range_pfn <= final_end_range_pfn) {
-		/* Debug info */
-		(*syslinux_reserved)++;
-
-		/* Skip this pfn */
-		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_start_range_pfn,
-							       __pfn_to_phys(final_start_range_pfn));
-		final_start_range_pfn++;
-		final_load_addr = __pfn_to_phys(final_start_range_pfn);
-	}
-	while (final_upper_addr >= __nosave_begin &&
-	       final_upper_addr < __nosave_begin + trampoline_size &&
-	       final_start_range_pfn <= final_end_range_pfn) {
-		/* Debug info */
-		(*syslinux_reserved)++;
-
-		/* Skip this pfn */
-		dprintf("Unable to restore pfn %d\t(0x%08x)\n", final_end_range_pfn,
-							       __pfn_to_phys(final_end_range_pfn));
-		final_end_range_pfn--;
-		final_upper_addr = __pfn_to_phys(final_end_range_pfn);
-	}
-
 	/* Skip the entire section */
-	if (final_end_range_pfn < final_start_range_pfn) {
-		nb_of_pfns = (end_range_pfn - start_range_pfn + 1);
-		dsize = PAGE_SIZE * nb_of_pfns;
-		printf("Skipping 0x%08x 0x%08x (len 0x%08x) %lu-%lu\n",
-			__pfn_to_phys(start_range_pfn),
-			__pfn_to_phys(end_range_pfn), dsize,
-			start_range_pfn, end_range_pfn);
+	if (final_end_range_pfn < final_start_range_pfn)
 		return 0;
-	}
-
-	/*
-	 * Free [start_range_pfn...final_start_range_pfn[
-	 * This memory is located between:
-	 *
-	 *	[data_addr...data_location[
-	 */
-	for (i = start_range_pfn; i < final_start_range_pfn; i++)
-		continue; //TODO
-
-	/* Free [start_range_pfn...final_start_range_pfn[ */
-	for (i = end_range_pfn + 1; i <= final_end_range_pfn; i++)
-		continue; //TODO
 
 	/* Keep track of the number of pages actually mapped */
 	nb_of_pfns = (final_end_range_pfn - final_start_range_pfn + 1);
 	(*mapped) += nb_of_pfns;
 
 	dsize = PAGE_SIZE * nb_of_pfns;
-	// XXX Check if right (char*?)
-	data_location = data_addr + PAGE_SIZE *
-				(final_start_range_pfn - start_range_pfn);
+	data_location = data_addr + PAGE_SIZE * (final_start_range_pfn - start_range_pfn);
 
 #ifdef METADATA_DEBUG
 	/*
@@ -258,15 +210,20 @@ bail:
  * When adding the first entry, both are NULL pointers. In that case, the list
  * will be bootstrapped.
  **/
-static void add_entry_list(struct data_buffers_list** list,
-			   struct data_buffers_list** cur,
-			   addr_t* data_buffer, unsigned long pfn)
+static int add_entry_list(struct data_buffers_list** list,
+			  struct data_buffers_list** cur,
+			  addr_t* data_buffer, unsigned long pfn)
 {
 	struct data_buffers_list* new_element =
 				malloc(sizeof(struct data_buffers_list));
+	if (!new_element)
+		return 1;
 
 	/* Create new element */
 	new_element->data = malloc(PAGE_SIZE);
+	if (!new_element->data)
+		return 1;
+
 	new_element->next = NULL;
 	new_element->pfn = pfn;
 	memmove(new_element->data, data_buffer, PAGE_SIZE);
@@ -281,6 +238,8 @@ static void add_entry_list(struct data_buffers_list** list,
 		(*cur)->next = new_element;
 		*cur = new_element;
 	}
+
+	return 0;
 }
 
 /**
@@ -300,7 +259,7 @@ static void extract_data_from_list(struct data_buffers_list** orig_list,
 	int i = 0;
 	struct data_buffers_list* list = *orig_list;
 
-	while (list != NULL) {
+	while (list) {
 		if (list->next) {
 			list = list->next;
 			memmove(shuffling_load_addr + i, list->prev->data,
@@ -354,6 +313,9 @@ static int skip_pagedir2(long pagedir2_size)
 	long pfns_found = 0;
 	unsigned long* dest_pfn = NULL;
 	unsigned int* data_buffer_size;
+
+	if (!pagedir2_size)
+		return 0;
 
 	/* pagedir2 is PAGE_SIZE aligned */
 	do {
@@ -570,10 +532,11 @@ read_buf_size_pagedir1:
 			unsigned int uncompr_len;
 			int error;
 
-			error = lzf_decompress(data_load_addr,
-					       *data_buffer_size,
-					       uncompr_tmp,
-					       &uncompr_len);
+			error = lzo1x_decompress((lzo_bytep) data_load_addr,
+						 (lzo_uint) *data_buffer_size,
+						 (lzo_bytep) uncompr_tmp,
+						 (lzo_uintp) &uncompr_len,
+						 NULL);
 			if (uncompr_len != PAGE_SIZE) {
 				printf("BUG: error when uncompressing data.\n");
 				if (uncompr_len)
@@ -606,10 +569,26 @@ read_buf_size_pagedir1:
 		 */
 		if (start_range_pfn == -1 || prev_dest_pfn == *dest_pfn - 1) {
 save_dest_pfn:
-			/* We have found another contiguous pfn, carry on */
-			add_entry_list(&data_buffers_list,
-				       &data_buffers_list_cur,
-				       data_buffer, *dest_pfn);
+			if ((*dest_pfn >= __phys_to_pfn(BOOT_DATA_ADDR) &&
+			     *dest_pfn <= __phys_to_pfn(BOOT_DATA_ADDR + boot_data_size)) ||
+			    (*dest_pfn >= __phys_to_pfn(TRAMPOLINE_ADDR) &&
+			     *dest_pfn <= __phys_to_pfn(TRAMPOLINE_ADDR + trampoline_size))) {
+				/*
+				 * Skip this pfn.
+				 * This shouldn't happen though, as the trampoline
+				 * should be restored on a nosave page and the boot
+				 * data space is located below the kernel.
+				 */
+				printf("WARNING! Skipping pfn %lu\n", *dest_pfn);
+			} else {
+				/* We have found another contiguous pfn, carry on */
+				if(add_entry_list(&data_buffers_list,
+						  &data_buffers_list_cur,
+						  data_buffer, *dest_pfn)) {
+					printf("BUG: OOM error.\n");
+					goto bail;
+				}
+			}
 
 			/* This happens only when creating a new range */
 			if (start_range_pfn == -1)
@@ -634,7 +613,7 @@ extract_restore_list:
 			 * and restart to read_dest_pfn.
 			 */
 #ifdef METADATA_DEBUG
-			dprintf("\nPFNs restore range %lu..%lu found. "
+			dprintf("PFNs restore range %lu..%lu found. "
 				"Next pfn to restore: %lu\n",
 				start_range_pfn, prev_dest_pfn, *dest_pfn);
 			dump_restore_list(data_buffers_list);
@@ -710,8 +689,8 @@ extract_restore_list:
 
 	/* Set up registers */
 	memset(&regs, 0, sizeof regs);
-	regs.eip = __nosave_begin;
-	regs.ebx = __nosave_begin;
+	regs.eip = TRAMPOLINE_ADDR;
+	regs.ebx = TRAMPOLINE_ADDR;
 
 #ifdef METADATA_DEBUG
 	dprintf("Final memory map:\n");
@@ -729,7 +708,7 @@ extract_restore_list:
 	 * then restore the registers and page tables before jumping into the
 	 * kernel.
 	 */
-	fputs("Setting up protected mode...\n", stdout);
+	dprintf("Setting up protected mode...\n");
 	syslinux_shuffle_boot_pm(ml, mmap, 0, &regs);
 
 	/* If here, not in PM, give up. */

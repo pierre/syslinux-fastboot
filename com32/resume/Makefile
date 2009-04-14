@@ -36,9 +36,13 @@ all: $(MODULES) $(LIB)
 test:
 	@bash resume_test.sh
 
+create_hibernate_image:
+	@bash resume_test.sh create
+
 resume.elf: resume_restore.o resume_parser.o resume_debug.o \
 	    resume_trampoline.o resume_bitops.o resume_bitmaps.o \
-	    resume.o resume_lzf.o resume_symbols.o resume_trampoline_asm.o \
+	    resume.o resume_symbols.o resume_trampoline_asm.o \
+	    lzo/minilzo.o \
 	    $(LIBS)
 	@echo "  LD      $@"
 	@$(LD) $(LDFLAGS) -o $@ $^
@@ -46,7 +50,7 @@ resume.elf: resume_restore.o resume_parser.o resume_debug.o \
 resume-test:
 	$(CC) -funit-at-a-time -g resume.c resume_restore.c resume_parser.c \
 				   resume_debug.c resume_bitops.c \
-				   resume_bitmaps.c resume_lzf.c \
+				   resume_bitmaps.c lzo/minilzo.c \
 				   -o resume -DDEBUG -DTESTING -Wall
 
 .PRECIOUS: %.o
@@ -71,7 +75,7 @@ $(LIB):
 	@$(RANLIB) $@
 
 tidy dist:
-	@rm -f *.o *.a *.lst *.elf
+	@rm -f *.o *.a *.lst *.elf lzo/*.o
 
 install: all
 

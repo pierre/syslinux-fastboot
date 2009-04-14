@@ -47,7 +47,7 @@ unsigned long saved_context_state;
 unsigned long saved_idt_address;
 unsigned long saved_cr0, saved_cr2;
 
-struct swsusp_symbl_info sym_info[13];
+struct swsusp_symbl_info sym_info[16];
 
 int get_missing_symbols_from_saved_kernel(void);
 

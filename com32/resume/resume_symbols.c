@@ -40,6 +40,9 @@ extern unsigned long saved_context_eflags;
 extern unsigned long saved_mmu_cr4_features;
 extern unsigned long __nosave_begin;
 extern unsigned long __nosave_end;
+extern unsigned long toi_bkd_address;
+extern unsigned long toi_in_hibernate_address;
+extern unsigned long in_suspend_address;
 
 struct swsusp_symbl_info sym_info[] =
 {
@@ -55,6 +58,9 @@ struct swsusp_symbl_info sym_info[] =
     {"idt_table",               &saved_context_idt},
     {"__nosave_begin",          &__nosave_begin},
     {"__nosave_end",            &__nosave_end},
+    {"toi_bkd",                 &toi_bkd_address},
+    {"toi_in_hibernate",        &toi_in_hibernate_address},
+    {"in_suspend",              &in_suspend_address},
     {"\0", 0},
 };
 
@@ -66,7 +72,7 @@ static int load_symbols_table(void)
 	void *data;
 
 	fputs("Loading System.map...", stdout);
-	if (zloadfile("System.map", &data, &data_len)) {
+	if (loadfile("System.map", &data, &data_len)) {
 		printf("failed!\n");
 		return 1;
 	}
@@ -111,7 +117,6 @@ static int get_kernel_symbl(void)
 #ifdef METADATA_DEBUG
 	dprintf("%lx", address);
 #endif /* METADATA_DEBUG */
-	free(s_address);
 
 	/* Skip symbol type */
 	symbols_table_posn += 3 * sizeof(char);
@@ -162,7 +167,7 @@ static int get_kernel_symbl(void)
  **/
 int get_missing_symbols_from_saved_kernel(void)
 {
-	int symbols_to_match = 12;
+	int symbols_to_match = 15;
 	struct saved_context* state;
 
 	if (load_symbols_table())
@@ -182,8 +187,6 @@ int get_missing_symbols_from_saved_kernel(void)
 	/*
 	 * Don't bother free'ing the memory, we are about to rewrite the Memory
 	 * Map anyway.
-	 * XXX Actually, if I don't free it, it crashes!
 	 */
-	free(symbols_table_buffer);
 	return symbols_to_match;
 }

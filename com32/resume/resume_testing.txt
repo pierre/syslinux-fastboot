@@ -1,42 +1,73 @@
+Collection of recipes for testing resume.c32.
+
+	How to create a hibernate image
+	+++++++++++++++++++++++++++++++
+
+I usually use a pre-built Debian image from Aurélien Jarno:
+
+	http://people.debian.org/~aurel32/qemu/i386/
+
+And run it using Qemu:
+
+	qemu -m 512M -hda debian_lenny_i386_small.qcow
+	     -append "resume=file:/dev/sda1:0xe3200 console=tty0
+	              console=ttyS0 root=/dev/sda1"
+	     -kernel linux-2.6/arch/i386/boot/bzImage
+
+To create the hibernate image using TuxOnIce FileAllocator:
+
+	echo TuxOnIce > /image
+	dd if=/dev/zero bs=1M count=50 >> /image
+	echo /image > /sys/power/tuxonice/file/target
+	echo 1 > /sys/power/tuxonice/do_hibernate
+
+To get the location of the file (resume=file:/dev/sda1:0xe3200):
+
+	cat /sys/power/tuxonice/resume
+
+To extract the image, the virtual disk needs to be converted to RAW format:
+
+	qemu-img convert -O raw debian_lenny_i386_small.qcow
+	         debian_lenny_i386_small.img
+
+Get the offset:
+
+	fdisk -l -u debian_lenny_i386_small.img:
+
+                      Device Boot      Start         End      Blocks   Id  System
+debian_lenny_i386_small.img1   *          63    20225834    10112886   83  Linux
+
+The offset is computed via start block * block size:
+
+	losetup -o $((63*512)) /dev/loop0 debian_lenny_i386_small.img
+	mount /dev/loop0 /media/vmx
+
 	How to parse manually the image
+	+++++++++++++++++++++++++++++++
 
-This is an example of a shell script implementation of the parser:
-
-# Beginning of data, PAGE_SIZE aligned
-j=118784
-# Number of pfns found
-good=0
-
-# 16432 can be found in the header
-while [[ $good -lt 16432 ]]; do
-	let tmp2=$j+4
-	let size=`od -j$tmp2 -N4 -Ad -t u4 image | awk '{print $2}'`
-	if [[ (! $? -eq 0) || $size -gt 4096 ]]; then
-		let j=$j+1
-		continue
-	else
-		let good=$good+1
-		echo "$j	[$size]	($good)	=	`od -j$j -N4 -Ad -tu4 image | awk '{print $2}'`"
-		#echo "`od -j$j -N4 -Ad -tu4 image | awk '{print $2}'`"
-		let j=$j+$size+8
-	fi
-done
+parser_image.sh is an example of a shell script implementation of the C parser.
+Checking its output (by verifying the pfns are sane numbers and monotically
+increasing) helps debugging if the hibernated image is compatible with resume.c32.
 
 	How to test resume.c32 using VMware Workstation
+	+++++++++++++++++++++++++++++++++++++++++++++++
 
 Create a blank VM with a small disk and format it as ext3.
 
 Mount the .vmdk to customize it:
 
-	sudo vmware-mount /VMS/TestHDD/TestHDD.vmdk /media/vmdk
+	sudo vmware-mount resume_testing.vmdk /media/resume_testing
 
 Example of extlinux.conf:
 
-	DEFAULT resume.c32 image
+	DEFAULT resume.c32 image.gz
 	PROMPT 0
 	# Avoid infinite loop if unable to resume
 	NOESCAPE 0
 	SERIAL 0
+
+Note: the DEFAULT directive itself is not enough to enable serial redirection.
+PROMPT and NOESCAPE are required.
 
 Umount it before running the VM:
 
@@ -47,12 +78,12 @@ Add the serial pipe to your .vmx:
 	serial0.present = "TRUE"
 	serial0.startConnected = "TRUE"
 	serial0.fileType = "pipe"
-	serial0.fileName = "/tmp/TestHDDserial"
+	serial0.fileName = "/tmp/resume_testing_serial"
 	serial0.tryNoRxLoss = "TRUE"
 
 When starting the VM, you can interact with it using:
 
-	socat unix-connect:/tmp/TestHDDserial stdout
+	socat unix-connect:/tmp/resume_testing_serial stdout
 
 
 	How to create a VMDK file
@@ -64,6 +95,9 @@ When starting the VM, you can interact with it using:
 	sudo vmware-mount -x
 	qemu -M pc -hda TestHDD.vmdk -m 1000 -no-kqemu -boot c -s -S
 
+Or
+
+	$ qemu-img convert debian-hurd-k16-qemu.img -O vmdk
 
 	How to create a raw file for Bochs
 

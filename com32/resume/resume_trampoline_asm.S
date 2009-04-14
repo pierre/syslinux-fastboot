@@ -11,6 +11,8 @@
  *
  * ----------------------------------------------------------------------- */
 
+#include "resume_asm.h"
+
 /* Linux definitions. See arch/x86/include/asm/segment.h */
 #define GDT_ENTRY_BOOT_CS		2
 #define GDT_ENTRY_BOOT_DS		(GDT_ENTRY_BOOT_CS + 1)
@@ -33,9 +35,8 @@
 #define __SYSLINUX_CS			0x20
 
 /* Physical address */
-#define pa2(X) ((X)-trampoline_start+0x1473000)
-// XXX
-#define pa(X) ((X)-boot_data_start+0x8000)
+#define pa2(X) ((X)-trampoline_start+TRAMPOLINE_ADDR)
+#define pa(X) ((X)-boot_data_start+BOOT_DATA_ADDR)
 
 .global trampoline_start
 .global trampoline_end
@@ -50,10 +51,17 @@
 .global saved_context_idt
 .global __nosave_begin
 .global __nosave_end
+.global toi_bkd_address
+.global toi_in_hibernate_address
+.global in_suspend_address
 .global boot_data_start
 .global boot_data_end
 
 .text
+
+/*
+ * XXX TODO: restore toi_bkd, toi_in_hibernate and restore_highmem_pblist
+ */
 
 /*
  * Start of our text segment (it will be relocated at __nosave_begin).
@@ -87,12 +95,12 @@ trampoline_start:
 	 * |                                      |       |   | | |   |S|W| |
 	 * +----------------------------------------------------------------+
 	 *
-	 * Page tables are stored starting at pg0, at 0x9000.
+	 * Page tables are stored starting at pg0, at BOOT_DATA_ADDR + 1K.
 	 * The PDE are allocated statically (see the data section below).
 	 */
 
 	/*
-	 * Map 0x8000 ... 0xc000
+	 * Map BOOT_DATA_ADDR ...
 	 * This is used by the trampoline to access page directories/tables
 	 * and misc. data.
 	 */
@@ -103,23 +111,27 @@ trampoline_start:
 						# write %eax in %edi and
 						# advance edi
 	addl $0x1000,%eax			# Next page address (4K)
-	cmp $0xb000,%edi			# Write only one page table
+	cmp $pa(pg1),%edi		# Write only one page table
 	jne 2b
 
 	/*
-	 * Map __nosave_begin ... __nosave_end
+	 * Map TRAMPOLINE_ADDR ...
 	 * This is used to access the code itself of the trampoline.
 	 */
 	movl $pa(pg1),%edi
 	movl $007,%eax				# 0x007 = PRESENT+RW+USER
-	addl $0x1400000,%eax			# Align to cover __nosave_begin
+	addl $TRAMPOLINE_ADDR,%eax		# Align to cover TRAMPOLINE_ADDR
+	# There is some weird rounding going on here:
+	# e.g. starting mapping physical addresses at 0x146c0000 won't work
+	# here (triple fault with CR2=0), we need to start at 0x14600000.
+	# Is that needed by hardware or do we have a bug in our page tables?
+	andl $0xFFF0000F,%eax			# Round to page boundary
 2:	stosl					# Write one entry:
 						# write %eax in %edi and
 						# advance edi
 	addl $0x1000,%eax			# Next page address (4K)
 	cmp $pa(empty_zero_page),%edi		# Write only on page table
 	jne 2b
-
 	/* Load CR3 with the address of the page directory */
 	movl $pa(boot_swapper_pg_dir),%eax
 	movl %eax,%cr3
@@ -135,8 +147,11 @@ trampoline_start:
 	 * eip.
 	 */
 	movl %eax,%cr0
-	/* PAGING enabled */
 
+	/*
+	 * PAGING enabled: if it comes here, this means the mapping to
+	 * access the trampoline before reloading swapper_pg_dir works
+	 */
 	/* We need to relocate ourselves in the kernel address space */
 	ljmp $(__SYSLINUX_CS),$(pa2(1f)+__PAGE_OFFSET)
 
@@ -183,8 +198,20 @@ trampoline_start:
 	 * The first thing to do is to restore the page directory to its
 	 * proper value. This will give us access to the saved_context_* data.
 	 *
+	 * Note: if this fails with e.g.
+	 * qemu: fatal: Trying to execute code outside RAM or ROM at 0xc146c098
+	 * (CR2 == 0), this is because the virtual machine doesn't have enough
+	 * RAM (tweak -m).
+	 * Note2: cr4 needs to be restored first! Otherwise, restoring cr3 is
+	 * likely to triple fault with CR2 == 0.
+	 *
 	 * XXX SMP: turn on paging options (PSE, PAE, ...)
 	 */
+	movl pa2(saved_mmu_cr4_features)+__PAGE_OFFSET,%eax
+	addl $__PAGE_OFFSET,%eax
+	movl (%eax),%ecx
+	movl %ecx,%cr4
+
 	movl pa(saved_swapper_pg_dir),%ecx
 	movl %ecx,%cr3
 	ljmp $(__KERNEL_CS),$(pa2(3f)+__PAGE_OFFSET)
@@ -286,6 +313,11 @@ gdt_descr_reloc:
 	.word	0xf8
 gdt_reloc:
 	.long	pa2(gdt_table_reloc)+__PAGE_OFFSET	# gdt address
+/*
+ * The base addresses of the GDT shuld be aligned on an eight-byte boundary
+ * to yield the best processor performance.
+ */
+.org 0x400
 gdt_table_reloc:
 	.quad 0x0000000000000000	/* NULL descriptor */
 	.quad 0x0000000000000000	/* 0x0b reserved */
@@ -336,7 +368,7 @@ gdt_table_reloc:
 trampoline_end:
 
 /*
- * Start of our data section (will be reloaded at 0x8000).
+ * Start of our data section (will be reloaded at BOOT_DATA_ADDR).
  *
  * Note: the trampoline will be restored at __nosave_begin. It needs to fit
  * between __nosave_begin and __nosave_end! (4K). There is no room for our
@@ -354,29 +386,32 @@ __nosave_begin:
 	.long	0
 __nosave_end:
 	.long	0
+toi_bkd_address:
+	.long	0
+toi_in_hibernate_address:
+	.long	0
+in_suspend_address:
+	.long	0
 
 /*
  * We need to do a double mapping of
- *		0x8000 -- 0xe000
+ *		BOOT_DATA_ADDR -- BOOT_DATA_ADDR + 4K
  *		__nosave_begin+__PAGE_OFFSET -- __nosave_end+__PAGE_OFFSET
  *
  * When restoring swapper_pg_dir, EIP needs to be in the 0xCxxxxx address
  * space. This means that, when we enable paging, we need to add a kernel
  * space mapping as well as the identity one.
  *
- * boot_swapper_pg_dir is at 0x9000.
+ * boot_swapper_pg_dir is at BOOT_DATA_ADDR + 1K.
  *
- * XXX This needs to be dynamic. __nosave_begin will not always be at 0xc146xxx
+ * Filling with 0 or with the address of pg1 is the same space overhead.
+ *
+ * XXX This should be dynamic based on TRAMPOLINE_ADDR.
  */
 .org 0x1000
 boot_swapper_pg_dir:
-	.long 0x0000a007	# pfns 0 --> 1023 (0x0-0x3FF000)
-	.fill 4,4,0
-	.long 0x0000b007	# pfns 5120 --> 6143 (1400000-17FF000)
-	.fill 766,4,0
-	.long 0x0000b007	# pfns 791552 --> 792575 (0xC1400000-0xC17FF000)
-	.fill 251,4,0x0000b007  # XXX?? I screwed something up,
-				# I shouldn't need that. Check the math.
+	.long BOOT_DATA_ADDR+0x2000+0x7	# 0x0-0x400000 to access boot data
+	.fill 1023,4,BOOT_DATA_ADDR+0x3000+0x7
 
 /*
  * These are provisional page tables - the final page tables will be

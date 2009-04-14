@@ -11,20 +11,12 @@
  *
  * ----------------------------------------------------------------------- */
 
-#ifndef _RESUME_RESTORE_H
-#define _RESUME_RESTORE_H
+#ifndef _RESUME_ASM_H
+#define _RESUME_ASM_H
 
-#include "resume_asm.h"
+/* Give some room to restore low 1M */
+#define BOOT_DATA_ADDR	0x100000
+/* Nuke the first pfn, the kernel shouldn't need it anyway (startup stuff) */
+#define TRAMPOLINE_ADDR	0x1473000
 
-/* Define addr_t */
-#include "resume.h"
-
-struct data_buffers_list {
-	unsigned long pfn;
-	addr_t* data;
-	struct data_buffers_list *next, *prev;
-};
-
-int load_memory_map(unsigned long, unsigned long, unsigned long);
-
-#endif /* _RESUME_RESTORE_H */
+#endif /* _RESUME_ASM_H */

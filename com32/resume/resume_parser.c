@@ -21,42 +21,7 @@
 #include "resume_bitmaps.h"
 #include "resume_parser.h"
 
-#ifdef METADATA_DEBUG
-/**
- * toi_load_extent_chain - load a chain of extents
- * @chain:	Chain to populate.
- *
- * Read the extent chain back from disk. This is not needed as we have
- * filesystem drivers.
- **/
-static int toi_load_extent_chain(struct hibernate_extent_chain* chain)
-{
-	struct hibernate_extent *this, *last = NULL;
-	int i;
-
-	for (i = 0; i < chain->num_extents; i++) {
-		this = malloc(sizeof(struct hibernate_extent));
-		if (!this) {
-			error("Failed to allocate a new extent.\n");
-			return -1;
-		}
-		this->next = NULL;
-
-		memcpy(this, toi_image_buffer + toi_image_buffer_posn,
-			2 * sizeof(unsigned long));
-		MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(unsigned long));
-
-		if (last)
-			last->next = this;
-		else
-			chain->first = this;
-		last = this;
-	}
-
-	return 0;
-}
-#endif /* METADATA_DEBUG */
-
+#define METADATA_DEBUG
 /**
  * read_metadata - read configuration and bitmaps from disk
  * @pagedir1_size:	Size of pagedir1 (found in the header).
@@ -163,14 +128,6 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	// FIXME (easy fix)
 	READ_BUFFER(chain, struct hibernate_extent_chain*);
 	MOVE_FORWARD_BUFFER_POINTER(2 * sizeof(int));
-
-#ifdef METADATA_DEBUG
-	dump_extent_chain(chain);
-
-	/* This is not needed, as we have filesystem drivers */
-	toi_load_extent_chain(chain);
-	dump_block_chains(chain);
-#endif /* METADATA_DEBUG */
 
 	/*
 	 * The header is located after:
