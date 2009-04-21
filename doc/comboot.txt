@@ -79,13 +79,14 @@ The following arguments are passed to the program on the stack:
 
  Address  Size	Meaning
  [ESP]    dword Return (termination) address
- [ESP+4]  dword	Number of additional arguments (currently 5)
+ [ESP+4]  dword	Number of additional arguments (currently 7)
  [ESP+8]  dword	Pointer to the command line arguments (null-terminated string)
  [ESP+12] dword Pointer to INT call helper function
  [ESP+16] dword Pointer to low memory bounce buffer
  [ESP+20] dword Size of low memory bounce buffer
  [ESP+24] dword Pointer to FAR call helper function (new in 2.05)
  [ESP+28] dword Pointer to CDECL helper function (new in 3.54)
+ [ESP+32] dword Amount of memory controlled by the Syslinux core (new in 3.74)
 
 This corresponds to the following C prototype, available in the file
 com32/include/com32.h:
@@ -568,7 +569,7 @@ AX=0010h [3.00] Resolve hostname [PXELINUX]
 	all uses of IP addresses in PXE are also in network byte order.
 
 
-AX=0011h [3.05] Obsoleted in 3.75
+AX=0011h [3.05] Obsoleted in 3.80
 
 
 AX=0012h [3.50] Cleanup, shuffle and boot
@@ -798,10 +799,10 @@ AX=0019h [3.50] Read disk [SYSLINUX, ISOLINUX, EXTLINUX]
 	2048-byte CD-ROM sector numbers.
 
 
-AX=001Ah [3.50] Obsoleted in 3.75
+AX=001Ah [3.50] Obsoleted in 3.80
 
 
-AX=001Bh [3.50]	Obsoleted in 3.75
+AX=001Bh [3.50]	Obsoleted in 3.80
 
 
 AX=001Ch [3.60] Get pointer to auxilliary data vector
@@ -884,7 +885,7 @@ AX=0022h [3.74] Close directory
 	Closes a directory.
 
 
-AX=0023h [3.75] Get shuffler parameters
+AX=0023h [3.80] Get shuffler parameters
 	Input:	AX	0023h
 	Output:	CX	size of shuffler "safe area" in bytes
 		Other registers reserved for future use
@@ -894,7 +895,7 @@ AX=0023h [3.75] Get shuffler parameters
 	additional parameters.
 
 
-AX=0024h [3.75] Cleanup, shuffle and boot, raw version
+AX=0024h [3.80] Cleanup, shuffle and boot, raw version
 	Input:	AX	0024h
 		DX	derivative-specific flags (see function 000Ch)
 		EDI	shuffle descriptor list safe area
@@ -936,13 +937,20 @@ AX=0024h [3.75] Cleanup, shuffle and boot, raw version
 	entry, the destination is used as an entry point, and the
 	source represents the type of entry point:
 
-		0	Real mode (dst is CS:IP)
+		0	16-bit protected mode (dst is CS.base)
 		1	Flat 32-bit protected mode (dst is EIP)
 
-	This routine does not set up any register state whatsoever,
-	including stack.  It is the responsibility of the caller to
-	make sure the entry point provided sets up any registers
-	needed.  This is particularly important that a real mode entry
-	point reloads all data segment registers at the earliest
-	possible point.
+	This routine does not set up any GPR register state
+	whatsoever, including stack.  It is the responsibility of the
+	caller to make sure the entry point provided sets up any
+	registers needed.
 
+	For mode 0 (16-bit real mode), EAX will contain CR0 with bit 0
+	masked out, suitable for loading into CR0 to immediately enter
+	real mode.  Note: if real-mode entry is planned,
+	(CS.base & 0xfff0000f) should == 0 for compatibility with KVM,
+	and possibly other virtualization solutions.
+
+	In both mode 0 and mode 1, the data segments will be loaded
+	with base-zero read/write segments.  For mode 0, B=0 and the
+	limits will be 64K, for mode 1, B=1 and the limits will be 4 GB.

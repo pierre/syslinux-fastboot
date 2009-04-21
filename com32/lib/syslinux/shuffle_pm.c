@@ -1,6 +1,7 @@
 /* ----------------------------------------------------------------------- *
  *
- *   Copyright 2007-2008 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2007-2009 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2009 Intel Corporation; author: H. Peter Anvin
  *
  *   Permission is hereby granted, free of charge, to any person
  *   obtaining a copy of this software and associated documentation
@@ -58,7 +59,7 @@ int syslinux_shuffle_boot_pm(struct syslinux_movelist *fraglist,
 
   regstub = 0x800;		/* Locate anywhere above this point */
   stublen = sizeof handoff_code;
-  rv = syslinux_memmap_find(tmap, SMT_FREE, &regstub, &stublen);
+  rv = syslinux_memmap_find(tmap, SMT_FREE, &regstub, &stublen, 1);
   syslinux_free_memmap(tmap);
   if (rv)
     return -1;

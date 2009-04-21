@@ -77,6 +77,7 @@ struct s_hdt_menu {
   struct s_my_menu vesa_menu;
   struct s_my_menu vesa_card_menu;
   struct s_my_menu vesa_modes_menu;
+  struct s_my_menu vpd_menu;
   int total_menu_count; // Sum of all menus we have
 };
 
@@ -90,9 +91,7 @@ int compute_PCI(struct s_hdt_menu *hdt_menu, struct s_hardware *hardware);
 void compute_kernel(struct s_my_menu *menu, struct s_hardware *hardware);
 
 // Disk Stuff
-int compute_disk_module(struct s_my_menu *menu, int nb_sub_disk_menu,
-                        struct diskinfo *d, int disk_number);
-void compute_disks(struct s_hdt_menu *menu, struct diskinfo *disk_info, struct s_hardware *hardware);
+void compute_disks(struct s_hdt_menu *menu, struct driveinfo *disk_info, struct s_hardware *hardware);
 
 // DMI Stuff
 void compute_motherboard(struct s_my_menu *menu, s_dmi * dmi);
@@ -102,6 +101,9 @@ void compute_chassis(struct s_my_menu *menu, s_dmi * dmi);
 void compute_bios(struct s_my_menu *menu, s_dmi * dmi);
 void compute_memory(struct s_hdt_menu *menu, s_dmi * dmi, struct s_hardware *hardware);
 void compute_ipmi(struct s_my_menu *menu, s_dmi * dmi);
+
+// VPD Stuff
+void compute_vpd(struct s_my_menu *menu, struct s_hardware *hardware);
 
 // Processor Stuff
 void compute_processor(struct s_my_menu *menu, struct s_hardware *hardware);

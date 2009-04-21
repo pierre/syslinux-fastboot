@@ -1,6 +1,7 @@
 ;; -----------------------------------------------------------------------
 ;;
 ;;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;;
 ;;   This program is free software; you can redistribute it and/or modify
 ;;   it under the terms of the GNU General Public License as published by
@@ -19,11 +20,6 @@
 ;
 ; Hook macros, that may or may not be defined
 ;
-%ifndef HAVE_SPECIAL_APPEND
-%macro SPECIAL_APPEND 0
-%endmacro
-%endif
-
 %ifndef HAVE_UNLOAD_PREP
 %macro UNLOAD_PREP 0
 %endmacro
@@ -87,7 +83,7 @@ construct_cmdline:
                 mov al,' '                      ; Space
                 stosb
 
-		SPECIAL_APPEND			; Module-specific hook
+		call do_ip_append		; Handle IPAppend
 
                 mov si,[CmdOptPtr]              ; Options from user input
 		call strcpy
@@ -99,12 +95,6 @@ construct_cmdline:
 ;
 parse_cmdline:
 		mov di,cmd_line_here
-		xor ax,ax
-		mov [InitRDPtr],ax		; No initrd= option (yet)
-		mov [QuietBoot],al
-%if IS_PXELINUX
-		and byte [KeepPXE],~2
-%endif
 .skipspace:	mov al,[es:di]
 		inc di
 .skipspace_loaded:
@@ -180,7 +170,7 @@ opt_quiet:
 
 %if IS_PXELINUX
 opt_keeppxe:
-		or byte [KeepPXE],2		; KeepPXE set by command line
+		or byte [KeepPXE],1		; KeepPXE set by command line
 		ret
 %endif
 
@@ -686,7 +676,7 @@ CmdLineEnd	resw 1			; End of the command line in real_mode_seg
 SetupSecs	resw 1			; Number of setup sectors (+bootsect)
 KernelVersion	resw 1			; Kernel protocol version
 ;
-; These 
+; These are derived from the command-line parser
 ;
 InitRDPtr	resw 1			; Pointer to initrd= option in command line
 LoadFlags	resb 1			; Loadflags from kernel

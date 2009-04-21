@@ -1,6 +1,7 @@
 /* ----------------------------------------------------------------------- *
  *
- *   Copyright 2004-2008 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2004-2009 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2009 Intel Corporation; author: H. Peter Anvin
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -11,6 +12,7 @@
  * ----------------------------------------------------------------------- */
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <minmax.h>
@@ -18,6 +20,7 @@
 #include <inttypes.h>
 #include <colortbl.h>
 #include <com32.h>
+#include <syslinux/adv.h>
 #include <syslinux/config.h>
 
 #include "menu.h"
@@ -36,6 +39,7 @@ long long totaltimeout = 0;
 /* Keep track of global default */
 static int has_ui = 0;		/* DEFAULT only counts if UI is found */
 static const char *globaldefault = NULL;
+static bool menusave    = false; /* True if there is any "menu save" */
 
 /* Linked list of all entires, hidden or not; used by unlabel() */
 static struct menu_entry *all_entries;
@@ -170,6 +174,7 @@ static struct menu * new_menu(struct menu *parent,
 
     m->allowedit = parent->allowedit;
     m->timeout   = parent->timeout;
+    m->save      = parent->save;
 
     m->ontimeout = refstr_get(parent->ontimeout);
     m->onerror   = refstr_get(parent->onerror);
@@ -189,7 +194,7 @@ static struct menu * new_menu(struct menu *parent,
     for (i = 0; i < NPARAMS; i++)
       m->mparm[i] = mparm[i].value;
 
-    m->allowedit = 1;		/* Allow edits of the command line */
+    m->allowedit = true;	/* Allow edits of the command line */
     m->color_table = default_color_table();
   }
 
@@ -215,6 +220,7 @@ struct labeldata {
   unsigned int menudisabled;
   unsigned int menuindent;
   enum menu_action action;
+  int save;
   struct menu *submenu;
 };
 
@@ -301,6 +307,7 @@ record(struct menu *m, struct labeldata *ld, const char *append)
     me->helptext    = ld->helptext;
     me->hotkey	    = 0;
     me->action	    = ld->action ? ld->action : MA_CMD;
+    me->save        = ld->save ? (ld->save > 0) : m->save;
 
     if ( ld->menuindent ) {
       const char *dn;
@@ -667,6 +674,17 @@ static void parse_config_file(FILE *f)
 	}
       } else if ( looking_at(p, "shiftkey") ) {
 	shiftkey = 1;
+      } else if ( looking_at(p, "save") ) {
+	menusave = true;
+	if (ld.label)
+	  ld.save = 1;
+	else
+	  m->save = true;
+      } else if ( looking_at(p, "nosave") ) {
+	if (ld.label)
+	  ld.save = -1;
+	else
+	  m->save = false;
       } else if ( looking_at(p, "onerror") ) {
 	refstr_put(m->onerror);
 	m->onerror = refstrdup(skipspace(p+7));
@@ -932,7 +950,7 @@ static void parse_config_file(FILE *f)
     } else if ( looking_at(p, "ontimeout") ) {
       m->ontimeout = refstrdup(skipspace(p+9));
     } else if ( looking_at(p, "allowoptions") ) {
-      m->allowedit = atoi(skipspace(p+12));
+      m->allowedit = !!atoi(skipspace(p+12));
     } else if ( looking_at(p, "ipappend") ) {
       if (ld.label)
         ld.ipappend = atoi(skipspace(p+8));
@@ -1022,6 +1040,23 @@ void parse_configs(char **argv)
     if (me && me->menu != hide_menu) {
       me->menu->defentry = me->entry;
       start_menu = me->menu;
+    }
+  }
+
+  /* If "menu save" is active, let the ADV override the global default */
+  if (menusave) {
+    size_t len;
+    const char *lbl = syslinux_getadv(ADV_MENUSAVE, &len);
+    char *lstr;
+    if (lbl && len) {
+      lstr = refstr_alloc(len);
+      memcpy(lstr, lbl, len);	/* refstr_alloc() adds the final null */
+      me = find_label(lstr);
+      if (me && me->menu != hide_menu) {
+	me->menu->defentry = me->entry;
+	start_menu = me->menu;
+      }
+      refstr_put(lstr);
     }
   }
 

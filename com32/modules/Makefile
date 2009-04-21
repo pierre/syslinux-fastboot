@@ -1,6 +1,7 @@
 ## -----------------------------------------------------------------------
 ##
 ##   Copyright 2001-2009 H. Peter Anvin - All Rights Reserved
+##   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ##
 ##   This program is free software; you can redistribute it and/or modify
 ##   it under the terms of the GNU General Public License as published by
@@ -18,9 +19,10 @@ topdir = ../..
 include ../MCONFIG
 
 MODULES	  = chain.c32 config.c32 ethersel.c32 mboot.c32 dmitest.c32 \
-	    cpuidtest.c32 \
+	    cpuidtest.c32 disk.c32 \
 	    pcitest.c32 elf.c32 linux.c32 reboot.c32 pmload.c32 meminfo.c32 \
-	    sdi.c32 sanboot.c32 ifcpu64.c32 vesainfo.c32 kbdmap.c32 cmd.c32
+	    sdi.c32 sanboot.c32 ifcpu64.c32 vesainfo.c32 kbdmap.c32 cmd.c32 \
+	    vpdtest.c32
 
 TESTFILES =
 
@@ -59,6 +61,6 @@ spotless: clean
 	rm -f *.lss *.c32 *.com
 	rm -f *~ \#*
 
-install: all
+install:
 
 -include .*.d

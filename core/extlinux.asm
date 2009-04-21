@@ -5,7 +5,8 @@
 ;
 ;  A program to boot Linux kernels off an ext2/ext3 filesystem.
 ;
-;   Copyright 1994-2008 H. Peter Anvin - All Rights Reserved
+;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;
 ;  This program is free software; you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -71,18 +72,6 @@ vk_append:	resb max_cmd_len+1	; Command line
 		alignb 4
 vk_end:		equ $			; Should be <= vk_size
 		endstruc
-
-;
-; Segment assignments in the bottom 640K
-; Stick to the low 512K in case we're using something like M-systems flash
-; which load a driver into low RAM (evil!!)
-;
-; 0000h - main code/data segment (and BIOS segment)
-;
-real_mode_seg	equ 3000h
-cache_seg	equ 2000h		; 64K area for metadata cache
-xfer_buf_seg	equ 1000h		; Bounce buffer for I/O to high mem
-comboot_seg	equ real_mode_seg	; COMBOOT image loading zone
 
 ;
 ; File structure.  This holds the information for each currently open file.
@@ -571,7 +560,7 @@ syslinux_banner	db 0Dh, 0Ah
 		db VERSION_STR, ' ', DATE_STR, ' ', 0
 		db 0Dh, 0Ah, 1Ah	; EOF if we "type" this in DOS
 
-		align 8, db 0
+		alignz 8
 ldlinux_magic	dd LDLINUX_MAGIC
 		dd LDLINUX_MAGIC^HEXDATE
 
@@ -1553,7 +1542,7 @@ build_curdir_str:
 		section .data
 copyright_str   db ' Copyright (C) 1994-'
 		asciidec YEAR
-		db ' H. Peter Anvin and contributors', CR, LF, 0
+		db ' H. Peter Anvin et al', CR, LF, 0
 err_bootfailed	db CR, LF, 'Boot failed: please change disks and press '
 		db 'a key to continue.', CR, LF, 0
 config_name	db 'extlinux.conf',0		; Unmangled form
@@ -1566,7 +1555,7 @@ config_name	db 'extlinux.conf',0		; Unmangled form
 ;
 ; Extensions to search for (in *forward* order).
 ;
-		align 4, db 0
+		alignz 4
 exten_table:	db '.cbt'		; COMBOOT (specific)
 		db '.img'		; Disk image
 		db '.bs', 0		; Boot sector
@@ -1582,7 +1571,7 @@ exten_table_end:
 debug_magic	dw 0D00Dh		; Debug code sentinel
 %endif
 
-		alignb 4, db 0
+		alignz 4
 BufSafe		dw trackbufsize/SECTOR_SIZE	; Clusters we can load into trackbuf
 BufSafeBytes	dw trackbufsize		; = how many bytes?
 %ifndef DEPEND

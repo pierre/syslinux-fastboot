@@ -1,6 +1,7 @@
 ;; -----------------------------------------------------------------------
 ;;
 ;;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;;
 ;;   This program is free software; you can redistribute it and/or modify
 ;;   it under the terms of the GNU General Public License as published by
@@ -682,25 +683,12 @@ comapi_configfile:
 ;
 ; INT 22h AX=000Fh	Get IPAPPEND strings
 ;
-%if IS_PXELINUX
 comapi_ipappend:
 		mov P_ES,cs
 		mov P_CX,numIPAppends
 		mov P_BX,IPAppends
 		clc
 		ret
-
-		section .data
-		alignb 2, db 0
-IPAppends	dw IPOption
-		dw BOOTIFStr
-numIPAppends	equ ($-IPAppends)/2
-
-%else
-comapi_ipappend equ comapi_err
-%endif
-
-		section .text
 
 ;
 ; INT 22h AX=0010h	Resolve hostname
@@ -789,17 +777,14 @@ comapi_runkernel:
 		mov [Kernel_EAX],eax
 
 		; It's not just possible, but quite likely, that ES:BX
-		; points into real_mode_seg, so we need to exercise some
-		; special care here... use xfer_buf_seg as an intermediary
+		; points into real_mode_seg or xfer_buf_seg, so we
+		; need to exercise some special care here... use
+		; trackbuf as an intermediary
 		push ds
-		push es
-		mov ax,xfer_buf_seg
 		mov ds,P_ES
 		mov si,P_BX
-		mov es,ax
-		xor di,di
+		mov di,trackbuf
 		call strcpy
-		pop es
 		pop ds
 
 %if IS_PXELINUX
@@ -811,18 +796,14 @@ comapi_runkernel:
 
 .finish:
 		; Copy the command line into its proper place
-		push ds
 		push es
-		mov ax,xfer_buf_seg
 		mov dx,real_mode_seg
-		mov ds,ax
 		mov es,dx
-		xor si,si
+		mov si,trackbuf
 		mov di,cmd_line_here
 		call strcpy
 		mov byte [es:di-1],' '		; Simulate APPEND
 		pop es
-		pop ds
 		mov [CmdLinePtr],di
 		mov word [CmdOptPtr],zero_string
 		jmp kernel_good_saved
@@ -859,8 +840,8 @@ comapi_userfont:
 		and al,al
 		jz .done
 		mov al,[VGAFontSize]
-		mov P_ES,ds
-		mov P_BX,vgafontbuf
+		mov P_ES,aux_seg
+		mov P_BX,aux.fontbuf
 
 .done:		; CF=0 here
 		mov P_AL,al
@@ -1002,6 +983,9 @@ comapi_shufsize:
 ;
 comapi_shufraw:
 		call comapi_cleanup
+		mov edi,P_EDI
+		mov esi,P_ESI
+		mov ecx,P_ECX
 		jmp shuffle_and_boot_raw
 
 		section .data
@@ -1024,7 +1008,7 @@ int21_table:
 		int21	 -1, comboot_bad_int21
 int21_count	equ ($-int21_table)/3
 
-		align 2, db 0
+		alignz 2
 int22_table:
 		dw comapi_err		; 0000 unimplemented syscall
 		dw comapi_get_version	; 0001 get SYSLINUX version

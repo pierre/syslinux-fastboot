@@ -2,6 +2,17 @@ Starting with 1.47, changes marked with SYSLINUX, PXELINUX, ISOLINUX
 or EXTLINUX apply to that specific program only; other changes apply
 to all derivatives.
 
+Changes in 3.75:
+	* PXELINUX: fix the "keeppxe" option, which was broken in
+	  3.74.
+	* MEMDISK: correct the extraction of geometry information from
+	  the MBR of a hard disk image, again broken in 3.74.
+	* extlinux(1) man page from Brian Pellin.
+	* Simple menu: MENU SAVE is now controllable on a menu-by-menu
+	  or entry-by-entry basis.
+	* gPXELINUX: fix interrupt-disabling bug.
+	* HDT: fix lockup on machines with certain PCI configurations.
+
 Changes in 3.74:
 	* New UI directive, which allows a more natural way to specify
 	  a menu system (or not.)  With the UI directive specifying
@@ -11,7 +22,7 @@ Changes in 3.74:
 	  dynamically.
 	* isohybrid: workaround bug in some versions of binutils.
 	* Fix issue with the placement of the initrd on some machines.
-	* ifcpu64: fix handling of less than three argumetns.
+	* ifcpu64: fix handling of less than three arguments.
 	* Fix bug in the shuffle library when dealing with a very
 	  large number of fragments.
 	* Documentation fixes by Vicente Jimenez Aguilar.
@@ -25,6 +36,24 @@ Changes in 3.74:
 	* Suppress the Loading ... message if "quiet" is specified on
 	  the kernel command line.
 	* Fix the use of "CONSOLE 0" with menu.c32.
+	* Allow COM32 modules to be aware of all memory even in the
+	  presence of a memory hole.  The "linux.c32" module can be
+	  used to load a kernel (or memdisk) plus large initrd on
+	  such a system.
+	* MBR: produce alternate MBR variants which force the drive
+	  number to hd0 (_f variants), or force the drive number to
+	  hd0 if the Ctrl key is pressed (_c variants.)  Furthermore,
+	  add an MBR variant (altmbr*.bin) which ignores the active
+	  flag and instead boots the partition number specified in the
+	  byte at offset 439 decimal.
+	* Add IPAPPEND strings to com32 modules, especially needed for
+	  linux.c32.
+	* New MENU SAVE directive which saves the latest menu
+	  selection until the next boot.  Currently only implemented for
+	  EXTLINUX.
+	* gfxboot.com: *experimental* interface module to Steffen
+	  Winterfeldt's "gfxboot" graphical front end
+	  (http://gfxboot.sourceforge.net/).  Module by Sebastian Herbszt.
 
 Changes in 3.73:
 	* Upgrade gPXE to release version 0.9.5.

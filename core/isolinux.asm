@@ -9,6 +9,7 @@
 ;  floppies.
 ;
 ;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;
 ;  This program is free software; you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -64,14 +65,6 @@ vk_append:	resb max_cmd_len+1	; Command line
 		alignb 4
 vk_end:		equ $			; Should be <= vk_size
 		endstruc
-
-;
-; Segment assignments in the bottom 640K
-; 0000h - main code/data segment (and BIOS segment)
-;
-real_mode_seg	equ 2000h
-xfer_buf_seg	equ 1000h		; Bounce buffer for I/O to high mem
-comboot_seg	equ real_mode_seg	; COMBOOT image loading zone
 
 ;
 ; File structure.  This holds the information for each currently open file.
@@ -1029,7 +1022,7 @@ writestr_early	equ writestr
 syslinux_banner	db CR, LF, 'ISOLINUX ', VERSION_STR, ' ', DATE_STR, ' ', 0
 copyright_str   db ' Copyright (C) 1994-'
 		asciidec YEAR
-		db ' H. Peter Anvin and contributors', CR, LF, 0
+		db ' H. Peter Anvin et al', CR, LF, 0
 isolinux_str	db 'isolinux: ', 0
 %ifdef DEBUG_MESSAGES
 startup_msg:	db 'Starting up, DL = ', 0
@@ -1065,7 +1058,7 @@ bios_cbios_str	db 'CHDD', 0
 bios_ebios_str	db 'EHDD' ,0
 %endif
 
-		alignb 4, db 0
+		alignz 4
 bios_cdrom:	dw getlinsec_cdrom, bios_cdrom_str
 %ifndef DEBUG_MESSAGES
 bios_cbios:	dw getlinsec_cbios, bios_cbios_str
@@ -1743,7 +1736,7 @@ dbg_configok_msg	db 'Configuration file opened...', CR, LF, 0
 ;
 ; Extensions to search for (in *forward* order).
 ;
-		align 4, db 0
+		alignz 4
 exten_table:	db '.cbt'		; COMBOOT (specific)
 		db '.img'		; Disk image
 		db '.bin'		; CD boot sector
@@ -1755,7 +1748,7 @@ exten_table_end:
 ;
 ; Floppy image table
 ;
-		align 4, db 0
+		alignz 4
 img_table_count	equ 3
 img_table:
 		dd 1200*1024		; 1200K floppy
@@ -1786,7 +1779,7 @@ img_table:
 ; **** ISOLINUX:: We may have to make this flexible, based on what the
 ; **** BIOS expects our "sector size" to be.
 ;
-		alignb 4, db 0
+		alignz 4
 BufSafe		dw trackbufsize/SECTOR_SIZE	; Clusters we can load into trackbuf
 BufSafeBytes	dw trackbufsize		; = how many bytes?
 %ifndef DEPEND

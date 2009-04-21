@@ -1,3 +1,16 @@
+/* -----------------------------------------------------------------------
+ *   
+ *   Copyright 2008-2009 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2009 Intel Corporation; author: H. Peter Anvin
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ *   Boston MA 02110-1301, USA; either version 2 of the License, or
+ *   (at your option) any later version; incorporated herein by reference.
+ *
+ * ----------------------------------------------------------------------- */
+
 /*
  * Linker script for the SYSLINUX core
  */
@@ -31,13 +44,22 @@ SECTIONS
 	__bss_len = __bss_end - __bss_start;
 	__bss_dwords = (__bss_len + 3) >> 2;
 
-	.config : AT (__config_lma) {
+ 	.config : AT (__config_lma) {
 		__config_start = .;
 		*(.config)
 		__config_end = .;
 	}
 	__config_len = __config_end - __config_start;
 	__config_dwords = (__config_len + 3) >> 2;
+
+	. = ALIGN(16);
+ 	.replacestub : AT (__replacestub_lma) {
+		__replacestub_start = .;
+		*(.replacestub)
+		__replacestub_end = .;
+	}
+	__replacestub_len = __replacestub_end - __replacestub_start;
+	__replacestub_dwords = (__replacestub_len + 3) >> 2;
 
 	/* Stack */
 
@@ -85,6 +107,10 @@ SECTIONS
 	. = ALIGN(4);
 	__config_lma = .;
 	. += SIZEOF(.config);
+
+	. = ALIGN(4);
+	__replacestub_lma = .;
+	. += SIZEOF(.replacestub);
 
 	/* ADV, must be the last intialized section */
 

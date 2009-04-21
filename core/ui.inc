@@ -1,6 +1,7 @@
 ;; -----------------------------------------------------------------------
 ;;
-;;   Copyright 1994-2008 H. Peter Anvin - All Rights Reserved
+;;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;;
 ;;   This program is free software; you can redistribute it and/or modify
 ;;   it under the terms of the GNU General Public License as published by
@@ -309,16 +310,6 @@ command_done:
 
 load_kernel:					; Load the kernel now
 ;
-; Common initialization for all kernel types
-;
-		xor ax,ax
-		mov [InitRDPtr],ax
-		mov [QuietBoot],al
-%if IS_PXELINUX
-		mov [KeepPXE],al
-%endif
-
-;
 ; First we need to mangle the kernel name the way DOS would...
 ;
 		mov si,command_line
@@ -602,6 +593,15 @@ kernel_good_saved:
 
 kernel_good:
 		pushad
+		;
+		; Common initialization for all kernel types
+		;
+		xor ax,ax
+		mov [InitRDPtr],ax
+		mov [QuietBoot],al
+%if IS_PXELINUX
+		mov [KeepPXE],al
+%endif
 
 		mov si,KernelName
 		mov di,KernelCName
@@ -697,7 +697,7 @@ err_notfound	db 'Could not find kernel image: ',0
 err_notkernel	db CR, LF, 'Invalid or corrupt kernel image.', CR, LF, 0
 
 
-		align 2, db 0
+		alignz 2
 kerneltype_table:
 		dw is_unknown_filetype	; VK_KERNEL
 		dw is_linux_kernel	; VK_LINUX

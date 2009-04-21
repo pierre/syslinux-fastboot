@@ -32,10 +32,13 @@
 #include <syslinux/pxe.h>
 #include "sys/pci.h"
 
+#include <disk/geom.h>
+
 #include "cpuid.h"
 #include "dmi/dmi.h"
 #include "hdt-ata.h"
 #include "../lib/sys/vesa/vesa.h"
+#include <vpd/vpd.h>
 
 /* This two values are used for switching for the menu to the CLI mode */
 #define HDT_SWITCH_TO_CLI "hdt_switch_to_cli"
@@ -53,6 +56,17 @@ extern int display_line_nb;
  printf ( __VA_ARGS__);\
  display_line_nb++; \
 } while (0);
+
+/* Display CPU registers for debugging purposes */
+static inline void printregs(const com32sys_t * r)
+{
+  printf("eflags = %08x  ds = %04x  es = %04x  fs = %04x  gs = %04x\n"
+         "eax = %08x  ebx = %08x  ecx = %08x  edx = %08x\n"
+         "ebp = %08x  esi = %08x  edi = %08x  esp = %08x\n",
+         r->eflags.l, r->ds, r->es, r->fs, r->gs,
+         r->eax.l, r->ebx.l, r->ecx.l, r->edx.l,
+         r->ebp.l, r->esi.l, r->edi.l, r->_unused_esp.l);
+}
 
 struct s_pxe {
   uint16_t vendor_id;
@@ -94,8 +108,9 @@ struct s_vesa {
 struct s_hardware {
   s_dmi dmi;                      /* DMI table */
   s_cpu cpu;                      /* CPU information */
+  s_vpd vpd;                      /* VPD information */
   struct pci_domain *pci_domain;  /* PCI Devices */
-  struct diskinfo disk_info[256]; /* Disk Information */
+  struct driveinfo disk_info[256]; /* Disk Information */
   int disks_count;		  /* Number of detected disks */
   struct s_pxe pxe;
   struct s_vesa vesa;
@@ -106,6 +121,7 @@ struct s_hardware {
   bool is_dmi_valid;
   bool is_pxe_valid;
   bool is_vesa_valid;
+  bool is_vpd_valid;
 
   bool dmi_detection; /* Does the dmi stuff has already been detected? */
   bool pci_detection; /* Does the pci stuff has already been detected? */
@@ -113,6 +129,7 @@ struct s_hardware {
   bool disk_detection;/* Does the disk stuff has already been detected? */
   bool pxe_detection; /* Does the pxe stuff has already been detected? */
   bool vesa_detection;/* Does the vesa sutff have been already detected? */
+  bool vpd_detection; /* Does the vpd stuff has already been detected? */
 
   char syslinux_fs[22];
   const struct syslinux_version *sv;
@@ -121,9 +138,12 @@ struct s_hardware {
   char memtest_label[255];
 };
 
+void reset_more_printf();
 const char *find_argument(const char **argv, const char *argument);
-char *skipspace(char *p);
+char *remove_spaces(char *p);
+char *skip_spaces(char *p);
 int detect_dmi(struct s_hardware *hardware);
+int detect_vpd(struct s_hardware *hardware);
 void detect_disks(struct s_hardware *hardware);
 void detect_pci(struct s_hardware *hardware);
 void cpu_detect(struct s_hardware *hardware);

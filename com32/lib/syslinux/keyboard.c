@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------- *
  *
- *   Copyright 2009 H. Peter Anvin - All Rights Reserved
+ *   Copyright 2009 Intel Corporation; author: H. Peter Anvin
  *
  *   Permission is hereby granted, free of charge, to any person
  *   obtaining a copy of this software and associated documentation
@@ -38,7 +38,7 @@ void __constructor __syslinux_get_keyboard_map(void)
   __intcall(0x22, &reg, &reg);
   if (!(reg.eflags.l & EFLAGS_CF)) {
     __syslinux_keyboard_map.version = reg.eax.w[0];
-    __syslinux_keyboard_map.length  = reg.edx.w[0];
+    __syslinux_keyboard_map.length  = reg.ecx.w[0];
     __syslinux_keyboard_map.map = MK_PTR(reg.es, reg.ebx.w[0]);
   }
 }

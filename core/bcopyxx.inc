@@ -1,6 +1,7 @@
 ;; -----------------------------------------------------------------------
 ;;
 ;;   Copyright 1994-2009 H. Peter Anvin - All Rights Reserved
+;;   Copyright 2009 Intel Corporation; author: H. Peter Anvin
 ;;
 ;;   This program is free software; you can redistribute it and/or modify
 ;;   it under the terms of the GNU General Public License as published by
@@ -40,10 +41,13 @@ bcopyxx_start	equ $
 ;
 ;	ECX is guaranteed to not be zero on entry.
 ;
+;	Clobbers ESI, EDI, ECX.
+;
 	
 pm_bcopy:
 		push ebx
 		push edx
+		push eax
 
 		cmp esi,-1
 		je .bzero
@@ -85,6 +89,7 @@ pm_bcopy:
 		a32 movsb
 .fab1:
 .done:
+		pop eax
 		pop edx
 		pop ebx
 		ret
@@ -201,9 +206,7 @@ pm_bcopy:
 pm_shuffle:
 		mov ebx,edi		; EBX <- descriptor list
 		lea edx,[edi+ecx]	; EDX <- shuffler end location
-		push edx
 		call pm_bcopy
-		pop edx
 		mov edi,edx
 		mov esi,bcopyxx_start
 		mov ecx,bcopyxx_dwords
@@ -223,9 +226,9 @@ pm_shuffle:
 		mov edi,[ebx]
 		mov esi,[ebx+4]
 		mov ecx,[ebx+8]
+		add ebx,12
 		jecxz .done
 		call pm_bcopy
-		add ebx,12
 		jmp .loop
 .done:
 		and esi,esi
@@ -236,30 +239,22 @@ pm_shuffle:
 		; to real mode... 
 pm_shuffle_real_mode:
 		call .here
-.here:		pop eax
-		mov ebx,eax
-		add eax,.next-.here
-		mov [ebx-.here+.rm_entry],edi
-		mov [ebx-.here+bcopy_gdt.CS16+2],ax
+.here:		pop ebx
+		mov eax,edi
+		add ebx,bcopy_gdt.CS16-.here
+		mov [ebx+2],ax
 		shr eax,16
-		mov [ebx-.here+bcopy_gdt.CS16+4],al
-		mov [ebx-.here+bcopy_gdt.CS16+7],ah
+		mov [ebx+4],al
+		mov [ebx+7],ah
 		mov eax,PM_DS16_RM
 		mov ds,eax
 		mov es,eax
 		mov fs,eax
 		mov gs,eax
 		mov ss,eax
-		jmp PM_CS16:0
-		bits 16
-.next:
 		mov eax,cr0
 		and al,~1
-		mov cr0,eax
-		jmp 0:0
-.rm_entry	equ $-4
-
-		bits 32
+		jmp PM_CS16:0
 
 		align	16
 ; GDT descriptor entry
@@ -273,12 +268,16 @@ bcopy_gdt:
 		dd bcopy_gdt		; pointer for LGDT instruction
 		dw 0
 
+ 		; TSS segment to keep Intel VT happy.  Intel VT is
+		; unhappy about anything that doesn't smell like a
+		; full-blown 32-bit OS.
+	desc TSS
+		dw 104-1, DummyTSS	; 08h 32-bit task state segment
+		dd 00008900h		; present, dpl 0, 104 bytes @DummyTSS
+
 	desc CS16
-		dd 0000ffffh		; 08h Code segment, use16, readable,
+		dd 0000ffffh		; 10h Code segment, use16, readable,
 		dd 00009b00h		; present, dpl 0, cover 64K
-	desc DS16_4G
-		dd 0000ffffh		; 10h Data segment, use16, read/write,
-		dd 008f9300h		; present, dpl 0, cover all 4G
 	desc DS16_RM
 		dd 0000ffffh		; 18h Data segment, use16, read/write,
 		dd 00009300h		; present, dpl 0, cover 64K
@@ -288,23 +287,10 @@ bcopy_gdt:
 	desc DS32
 		dd 0000ffffh		; 28h Data segment, use32, read/write,
 		dd 00cf9300h		; present, dpl 0, cover all 4G
-
-		; TSS segment to keep Intel VT happy.  Intel VT is
-		; unhappy about anything that doesn't smell like a
-		; full-blown 32-bit OS.
-	desc TSS
-		dw 104-1, DummyTSS	; 30h 32-bit task state segment
-		dd 00008900h		; present, dpl 0, 104 bytes @DummyTSS
-
-		; 16-bit stack segment, which may have a different
-		; base from DS16 (e.g. if we're booted from PXELINUX)
-	desc SS16
-		dd 0000ffffh		; 38h Data segment, use16, read/write,
-		dd 00009300h		; present, dpl 0, cover 64K
 	
 bcopy_gdt_size:	equ $-bcopy_gdt
 
-		align 4, db 0
+		alignz 4
 bcopyxx_end	equ $			; *Must* be dword-aligned!
 bcopyxx_len	equ $-bcopyxx_start
 bcopyxx_dwords	equ bcopyxx_len >> 2
@@ -314,10 +300,10 @@ bcopyxx_safe	equ bcopyxx_len + bcopyxx_stack
 
 ;
 ; Space for a dummy task state segment.  It should never be actually
-; accessed, but just in case it is, point to a chunk of memory not used
-; for anything real.
+; accessed, but just in case it is, point to a chunk of memory that
+; has a chance to not be used for anything real...
 ;
-DummyTSS	equ 0x800
+DummyTSS	equ 0x580
 
 		bits 16
 		section .text
