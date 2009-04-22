@@ -24,8 +24,16 @@ int swsusp_check(struct driveinfo *drive_info, struct part_entry *ptab, int *err
 	if (!header_p)
 		return -1; /* The error code has been stored in `error' */
 	else {
-		found = !memcmp(SWSUSP_SIG, header_p->sig, 10);
+		found = swsusp_check_signature(header_p);
 		free(header_p);
 		return found;
 	}
+}
+
+/**
+ * @header_p:	Pointer to what is believed to be a swsusp signature
+ **/
+int swsusp_check_signature(struct swsusp_header *header_p)
+{
+	return !memcmp(SWSUSP_SIG, header_p->sig, 10);
 }

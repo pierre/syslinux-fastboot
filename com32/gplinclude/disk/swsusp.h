@@ -16,4 +16,5 @@ struct swsusp_header {
 } __attribute__((packed));
 
 int swsusp_check(struct driveinfo*, struct part_entry*, int*);
+int swsusp_check_signature(struct swsusp_header *);
 #endif /* _SWSUSP_H */
