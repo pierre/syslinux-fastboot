@@ -23,10 +23,12 @@ com32		:= $(topdir)/com32
 
 MODULES		:= resume.c32
 
-INCLUDES	:= -I$(com32)/include
+INCLUDES	:= -I$(com32)/include -I$(com32)/gplinclude
 
 LIBS		:= $(LIBGCC) \
-		   $(com32)/libutil/libutil_com.a \
+		   $(com32)/gpllib/disk/read.o $(com32)/gpllib/disk/swsusp.o \
+		   $(com32)/gpllib/disk/util.o $(com32)/gpllib/disk/geom.o \
+		   $(com32)/gpllib/disk/labels.o $(com32)/libutil/libutil_com.a \
 		   $(com32)/lib/libcom32.a
 
 LDFLAGS		:= -m elf_i386 -T $(com32)/lib/com32.ld
