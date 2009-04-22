@@ -24,7 +24,7 @@
 extern struct mm mm;
 
 #ifdef DEBUG
-void dump_toi_file_header(struct toi_file_header* toi_file_header)
+void dump_toi_file_header(const struct toi_file_header* toi_file_header)
 {
 #ifdef DYN_PAGEFLAGS
 	int i, j;

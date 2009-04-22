@@ -31,7 +31,7 @@
 #include "resume_restore.h"
 
 #define dprintf printf
-void dump_toi_file_header(struct toi_file_header*);
+void dump_toi_file_header(const struct toi_file_header*);
 void dump_toi_header(struct toi_header*);
 void dump_toi_module_header(struct toi_module_header*);
 void dump_pagemap();
