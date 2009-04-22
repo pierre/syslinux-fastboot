@@ -118,8 +118,8 @@ error:
 		partition_p = strchr(argv[1], ',');
 		if (partition_p) {
 			resume_info.partition = strtoul(partition_p + 1, NULL, 10);
-			get_ptab(&resume_info.drive_info, &resume_info.ptab,
-				 resume_info.partition, NULL);
+			get_pentry(&resume_info.drive_info, &resume_info.ptab,
+				   resume_info.partition, NULL);
 
 			/* Check if the partition is valid */
 			if (resume_info.ptab.length == 0) {
