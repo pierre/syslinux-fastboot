@@ -25,6 +25,6 @@ struct data_buffers_list {
 	struct data_buffers_list *next, *prev;
 };
 
-int load_memory_map(unsigned long, unsigned long, unsigned long);
+int load_memory_map();
 
 #endif /* _RESUME_RESTORE_H */

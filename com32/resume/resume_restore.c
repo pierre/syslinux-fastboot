@@ -287,22 +287,22 @@ static void extract_data_from_list(struct data_buffers_list** orig_list,
 
 /**
  * skip_pagedir2 - move the image pointer after pagedir2
- * @pagedir2_size:	Number of pfns in pagedir2.
+ * @resume_info.toi_pagedir2_size:	Number of pfns in pagedir2.
  *
  * pagedir2 is saved first in the image - and reloaded last by TuxOnIce.
  * We don't care about this data - so we just skip it.
  *
  * Side Effects:
- *	toi_image_buffer_posn is moved.
+ *	resume_info.image_buffer_posn is moved.
  *	dest_pfn is changed.
  **/
-static int skip_pagedir2(long pagedir2_size)
+static int skip_pagedir2()
 {
 	long pfns_found = 0;
 	unsigned long* dest_pfn = NULL;
 	unsigned int* data_buffer_size;
 
-	if (!pagedir2_size)
+	if (!resume_info.toi_pagedir2_size)
 		return 0;
 
 	/* pagedir2 is PAGE_SIZE aligned */
@@ -312,13 +312,13 @@ static int skip_pagedir2(long pagedir2_size)
 	} while (!*dest_pfn);
 	goto read_buf_size_pagedir2;
 
-	while (pfns_found < pagedir2_size) {
+	while (pfns_found < resume_info.toi_pagedir2_size) {
 		READ_BUFFER(dest_pfn, unsigned long*);
 
 read_buf_size_pagedir2:
 		/* Read the size of the data */
-		data_buffer_size = (unsigned int*) (toi_image_buffer +
-						    toi_image_buffer_posn +
+		data_buffer_size = (unsigned int*) (resume_info.image_buffer +
+						    resume_info.image_buffer_posn +
 						    sizeof(unsigned long));
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
 			/* This is a bug: wrong buffer size */
@@ -333,13 +333,13 @@ read_buf_size_pagedir2:
 			       "pages to skip.\n");
 			printf("PFN %lu/%lu: %lu [%d]\n",
 			       pfns_found,
-			       pagedir2_size,
+			       resume_info.toi_pagedir2_size,
 			       *dest_pfn,
 			       *data_buffer_size);
 			goto bail;
 		} else {
 			pfns_found++;
-			toi_image_buffer_posn += *data_buffer_size +
+			resume_info.image_buffer_posn += *data_buffer_size +
 						 sizeof(unsigned int) +
 						 sizeof(unsigned long);
 
@@ -362,16 +362,14 @@ bail:
 }
 /**
  * load_memory_map - iterate through the bitmaps to setup SYSLINUX memory map
- * @data_len:	Size of the file.
+ * @resume_info.file_size:	Size of the file.
  * @nb_of_pfns:	Total size of both pagedirs.
  *
  * We bring back the data in the right pfns, setup SYSLINUX memory maps, shuffle
  * the memory and setup protected mode. The execute will jump to the trampoline
  * to restore registers and page tables.
  **/
-int load_memory_map(unsigned long data_len,
-		    unsigned long pagedir1_size,
-		    unsigned long pagedir2_size)
+int load_memory_map()
 {
 	void* data_buffer = malloc(PAGE_SIZE);
 	u8* data_load_addr = NULL;
@@ -445,7 +443,7 @@ int load_memory_map(unsigned long data_len,
 	 * Restoring program caches is handled via TuxOnIce, in the resume
 	 * code path from the saved kernel
 	 */
-	if (skip_pagedir2(pagedir2_size)) {
+	if (skip_pagedir2(resume_info.toi_pagedir2_size)) {
 		printf("Error while skipping pagedir2.\n");
 		goto bail;
 	}
@@ -462,14 +460,14 @@ int load_memory_map(unsigned long data_len,
 	 * Read all pages back - this is the main loop to bring back the pages
 	 * in memory
 	 */
-	while (toi_image_buffer_posn < data_len && pfn_read < pagedir1_size) {
+	while (resume_info.image_buffer_posn < resume_info.file_size && pfn_read < resume_info.toi_pagedir1_size) {
 		READ_BUFFER(dest_pfn, unsigned long*);
 
 read_buf_size_pagedir1:
 		/* Read the size of the data */
-		data_buffer_size = (unsigned int*) (toi_image_buffer +
-						     toi_image_buffer_posn +
-						     sizeof(unsigned long));
+		data_buffer_size = (unsigned int*) (resume_info.image_buffer +
+						    resume_info.image_buffer_posn +
+						    sizeof(unsigned long));
 
 		if (!*data_buffer_size || *data_buffer_size > PAGE_SIZE) {
 			/* This is a bug: wrong buffer size */
@@ -484,7 +482,7 @@ read_buf_size_pagedir1:
 		 * The buffer size seem valid. Advance the pointer and
 		 * check if the pfn is in the bitmap.
 		 */
-		toi_image_buffer_posn += sizeof(unsigned int) +
+		resume_info.image_buffer_posn += sizeof(unsigned int) +
 					 sizeof(unsigned long);
 		// XXX BROKEN
 		//if (!memory_bm_test_pfn(pageset1, *dest_pfn)) {
@@ -588,7 +586,7 @@ save_dest_pfn:
 			 * This happens only if the last pfn is alone (not part
 			 * of a range (see below).
 			 */
-			if (pfn_read == pagedir1_size) {
+			if (pfn_read == resume_info.toi_pagedir1_size) {
 				pfn_read++;
 				goto extract_restore_list;
 			}
@@ -635,7 +633,7 @@ extract_restore_list:
 			 * This only happens if the last pfn wasn't part of a
 			 * range (see above).
 			 */
-			if (pfn_read > pagedir1_size) {
+			if (pfn_read > resume_info.toi_pagedir1_size) {
 				/*
 				 * We added one in pfn_read to detect it was
 				 * the last entry. We need to remove it for the
@@ -656,10 +654,10 @@ extract_restore_list:
 	}
 
 	/* Sanity check: have we read all data? */
-	if (pfn_read != pagedir1_size) {
-		dprintf("BUG: pfn_read=%d but pagedir1_size=%lu\n",
+	if (pfn_read != resume_info.toi_pagedir1_size) {
+		dprintf("BUG: pfn_read=%d but resume_info.toi_pagedir1_size=%lu\n",
 				pfn_read,
-				pagedir1_size);
+				resume_info.toi_pagedir1_size);
 		/* This is really bad - we cannot resume */
 		goto bail;
 	} else
@@ -670,7 +668,7 @@ extract_restore_list:
 	free(uncompr_tmp);
 
 #ifndef TESTING
-	free(toi_image_buffer);
+	free(resume_info.image_buffer);
 
 	dprintf("%d pages mapped, %d reserved by SYSLINUX, %d unreachable\n",
 		mapped, syslinux_reserved, highmem_unreachable);

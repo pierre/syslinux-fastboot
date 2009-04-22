@@ -28,51 +28,35 @@
 #include <errno.h>
 #include <sys/stat.h>
 
+#include <disk/partition.h>
+#include <disk/util.h>
+
 #include "resume.h"
 #include "resume_debug.h"
-#include "resume_mm.h"
 #include "resume_tuxonice.h"
 #include "resume_parser.h"
-#include "resume_restore.h"
-
-/* Define DYN_PAGEFLAGS for TuxOnIce < 3-rc8 */
-#ifdef DYN_PAGEFLAGS
-#include "resume_dyn_pageflags.h"
-#else
-#include "resume_bitmaps.h"
-#endif /* !DYN_PAGEFLAGS */
 
 /* Do not attempt to relocate code in testing mode */
-#ifdef TESTING
-# define setup_trampoline_blob() ((void)1)
-#else
-#include <minmax.h>
+#ifndef TESTING
 #include <console.h>
 #include <syslinux/loadfile.h>
-#include <syslinux/movebits.h>
-#include <syslinux/bootrm.h>
-#include <syslinux/io.h>
 #include <syslinux/zio.h>
-
-#include "resume_trampoline.h"
 #endif /* !TESTING */
 
 /**
  * boot_image - main logic to bring back an image from disk
- * @ptr:	Pointer to the file.
- * @len:	Length of the file.
  **/
-static void boot_image(int len)
+static void boot_image(void)
 {
-	unsigned long pagedir1_size, pagedir2_size;
-
-	if(read_metadata(&pagedir1_size, &pagedir2_size)) {
+	if (read_metadata()) {
 		error("Unable to parse metadata.\n");
 		return;
 	}
 
-	/* Will return in protected mode */
-	load_memory_map(len, pagedir1_size, pagedir2_size);
+	if (resume_info.method == TOI_FILE)
+		load_memory_map();
+	else
+		error("Not yet implemented.\n");
 }
 
 /**
@@ -87,43 +71,86 @@ static void boot_image(int len)
 int main(int argc, char *argv[])
 {
 	void *data;
-#ifndef TESTING
-	size_t data_len;
-#else
+	char *partition_p;
+#ifdef TESTING
 	FILE *stream;
-	size_t data_len = BUFFER_SIZE;
-	char buffer[data_len];
+	char buffer[resume_info.file_size];
+	resume_info.file_size = BUFFER_SIZE;
 #endif
 
 	openconsole(&dev_null_r, &dev_stdcon_w);
 
 	if (argc != 2) {
-		error("Usage: resume.c32 resume_file\n");
+error:
+		error("Usage: resume.c32 (hd#,partition|file=resume_file)\n");
 		return 1;
 	}
 
-	fputs("Loading ", stdout);
-	fputs(argv[1], stdout);
-	fputs("... ", stdout);
+	resume_info.method = NONE;
+
+	if (!strncmp(argv[1], "file=", 5)) {
+		resume_info.file = argv[1] + 5;
+		fputs("Loading ", stdout);
+		fputs(resume_info.file, stdout);
+		fputs("... ", stdout);
 #ifndef TESTING
-	if (zloadfile(argv[1], &data, &data_len)) {
-		error("failed!\n");
-		return 1;
-	}
+		if (zloadfile(resume_info.file, &data, &resume_info.file_size)) {
+			error("failed!\n");
+			return 1;
+		}
 #else
-	stream = fopen(argv[1],"r");
-	fread(buffer, sizeof(char), BUFFER_SIZE, stream);
-	data = (void *) buffer;
+		stream = fopen(resume_info.toi_file,"r");
+		fread(buffer, sizeof(char), BUFFER_SIZE, stream);
+		data = (void *) buffer;
 #endif
-	fputs("ok\n", stdout);
+		fputs("ok\n", stdout);
 
-	/* Initialize the global data pointer */
-	toi_image_buffer = (char *) data;
-	toi_image_buffer_posn = 0;
+		/* Initialize the global data pointer */
+		resume_info.image_buffer = (char *) data;
+		resume_info.image_buffer_posn = 0;
 
-	boot_image(data_len);
+		/* For sanity checks */
+		resume_info.drive_info.disk = 0;
+		resume_info.partition = 0;
+	} else if (argv[1][0] == 'h' && argv[1][1] == 'd') {
+		 /* e.g. 0x80 or 0x81 */
+		resume_info.drive_info.disk = 0x80 + strtoul(argv[1] + 2, NULL, 10);
+		partition_p = strchr(argv[1], ',');
+		if (partition_p) {
+			resume_info.partition = strtoul(partition_p + 1, NULL, 10);
+			get_ptab(&resume_info.drive_info, &resume_info.ptab,
+				 resume_info.partition, NULL);
+
+			/* Check if the partition is valid */
+			if (resume_info.ptab.length == 0) {
+				error("The partition doesn't exist.\n");
+				return -1;
+			} else if (resume_info.ptab.ostype != 0x82) {
+				char *parttype;
+				get_label(resume_info.ptab.ostype, &parttype);
+				printf("The partition doesn't look like swap space but %s (Id=0x%X)\n",
+				       parttype, resume_info.ptab.ostype);
+				free(parttype);
+				return -1;
+			}
+		}
+
+		/* For sanity checks */
+		resume_info.file = NULL;
+		resume_info.file_size = 0;
+		resume_info.image_buffer = NULL;
+		resume_info.image_buffer_posn = 0;
+	} else
+		goto error;
+
+	boot_image();
 
 	/* We shouldn't get here */
-	error("Unable to resume.\n");
+	if (resume_info.drive_info.disk)
+		printf("Unable to resume from device 0x%X:%d\n", resume_info.drive_info.disk,
+								 resume_info.partition);
+	else
+		printf("Unable to resume from file %s\n", resume_info.file);
+
 	return 1;
 }

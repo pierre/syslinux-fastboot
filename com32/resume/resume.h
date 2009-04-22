@@ -15,6 +15,11 @@
 #define _RESUME_H
 
 #include <stdint.h>
+#include <disk/geom.h>
+#include <disk/partition.h>
+#include <disk/swsusp.h>
+
+#include "resume_tuxonice.h"
 
 #ifndef TESTING
 #include <syslinux/bootrm.h>
@@ -34,11 +39,33 @@ static __inline__ void error(const char *msg)
  * Global definitions
  */
 
-/* Pointer to the beginning of the image file */
-char* toi_image_buffer;
+enum {
+	NONE,
+	SWSUSP_SWAP_PARTITION,
+	SWSUSP_SWAP_FILE,
+	TOI_SWAP_PARTITION,
+	TOI_SWAP_FILE,
+	TOI_FILE,
+};
 
-/* Current offset */
-unsigned long toi_image_buffer_posn;
+struct resume_params {
+	int method;				/* Which resume method? See above */
+	/* Resume from partition */
+	struct driveinfo drive_info;
+	int partition;
+	struct part_entry ptab;
+	/* Resume from file */
+	char* file;
+	size_t file_size;
+	char* image_buffer;			/* Beginning of the image file */
+	unsigned long image_buffer_posn;	/* Offset in the file */
+	/* swsusp only */
+	struct swsusp_header sw_header;
+	/* TuxOnIce only */
+	struct toi_file_header toi_file_header;
+	long toi_pagedir1_size;
+	long toi_pagedir2_size;
+} resume_info;
 
 /* Location of book kernel data struct in kernel being resumed */
 unsigned long* boot_kernel_data_buffer;
@@ -47,9 +74,9 @@ unsigned long* boot_kernel_data_buffer;
 struct mm mm;
 
 #define MOVE_TO_NEXT_PAGE \
-toi_image_buffer_posn = (PAGE_SIZE * (toi_image_buffer_posn / PAGE_SIZE + 1));
-#define MOVE_FORWARD_BUFFER_POINTER(a) (toi_image_buffer_posn += (a))
-#define READ_BUFFER(a, b) (a = (b) (toi_image_buffer+toi_image_buffer_posn))
+resume_info.image_buffer_posn = (PAGE_SIZE * (resume_info.image_buffer_posn / PAGE_SIZE + 1));
+#define MOVE_FORWARD_BUFFER_POINTER(a) (resume_info.image_buffer_posn += (a))
+#define READ_BUFFER(a, b) (a = (b) (resume_info.image_buffer+resume_info.image_buffer_posn))
 
 /* Don't be too verbose */
 #define LIGHT 1

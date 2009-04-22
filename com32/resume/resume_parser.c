@@ -14,18 +14,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <disk/swsusp.h>
+
 #include "resume.h"
 #include "resume_debug.h"
 #include "resume_tuxonice.h"
 #include "resume_mm.h"
 #include "resume_bitmaps.h"
-#include "resume_parser.h"
 
-#define METADATA_DEBUG
 /**
- * read_metadata - read configuration and bitmaps from disk
- * @pagedir1_size:	Size of pagedir1 (found in the header).
- * @pagedir2_size:	Size of pagedir2 (found in the header).
+ * toi_read_metadata - read configuration and bitmaps from disk
  *
  * Side effects:
  *	mm is populated
@@ -33,11 +31,10 @@
  * Return:
  *	0 if everything went well, -1 otherwise.
  **/
-int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
+static int toi_file_read_metadata()
 {
 	struct toi_header* toi_header;
 	struct hibernate_extent_iterate_saved_state toi_writer_posn_save[4];
-	struct toi_file_header* toi_file_header;
 	struct toi_module_header* toi_module_header;
 	struct hibernate_extent_chain* chain;
 
@@ -50,18 +47,6 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	int size_bitmap;
 #endif /* DYN_PAGEFLAGS */
 
-	READ_BUFFER(toi_file_header, struct toi_file_header*);
-	/*
-	 * We only attempt to resume if the magic binary signature is found and
-	 * if an image is marked as present.
-	 */
-	if (!parse_signature(toi_file_header) || !toi_file_header->have_image) {
-		error("Invalid TuxOnIce file.\n");
-		goto bail;
-	}
-
-	dprintf("TuxOnIce: binary signature found.\n");
-
 	/*
 	 * Setup some values we are going to need to load the bitmaps.
 	 * These are kernel dependent (configuration dependent) so we
@@ -69,8 +54,8 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	 * XXX: In the static pageflags case, we assume only one zone.
 	 * I do not believe it supports NUMA.
 	 */
-	mm.num_nodes = toi_file_header->num_nodes;
-	mm.num_zones = toi_file_header->num_zones;
+	mm.num_nodes = resume_info.toi_file_header.num_nodes;
+	mm.num_zones = resume_info.toi_file_header.num_zones;
 
 	/*
 	 * The original header is:
@@ -100,13 +85,13 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	MOVE_FORWARD_BUFFER_POINTER(size_bitmap);
 #endif /* DYN_PAGEFLAGS */
 
-	dump_toi_file_header(toi_file_header);
+	dump_toi_file_header(&resume_info.toi_file_header);
 
 	/* Get extents info */
-	toi_image_buffer_posn = PAGE_SIZE;
+	resume_info.image_buffer_posn = PAGE_SIZE;
 
 	memcpy(&toi_writer_posn_save,
-	       toi_image_buffer + toi_image_buffer_posn,
+	       resume_info.image_buffer + resume_info.image_buffer_posn,
 	       sizeof(toi_writer_posn_save));
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(toi_writer_posn_save));
 
@@ -120,11 +105,11 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 				toi_writer_posn_save[i].offset);
 #endif /* METADATA_DEBUG */
 
-	if (!toi_file_header->devinfo_sz)
+	if (!resume_info.toi_file_header.devinfo_sz)
 		/* Backward compatibility */
-		toi_file_header->devinfo_sz = 16;
+		resume_info.toi_file_header.devinfo_sz = 16;
 	/* Skip dev_info */
-	MOVE_FORWARD_BUFFER_POINTER(toi_file_header->devinfo_sz);
+	MOVE_FORWARD_BUFFER_POINTER(resume_info.toi_file_header.devinfo_sz);
 
 	/* Load chains */
 	// XXX This assumes only one chain (one device).
@@ -143,17 +128,16 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	header_offset = PAGE_SIZE +
 		sizeof(struct toi_file_header) +
 		sizeof(unsigned long) +
-		toi_file_header->devinfo_sz +
+		resume_info.toi_file_header.devinfo_sz +
 		sizeof(struct hibernate_extent_chain) +
 		2 * sizeof(unsigned long) * chain->num_extents;
-	toi_image_buffer_posn = header_offset;
+	resume_info.image_buffer_posn = header_offset;
 
-	/* Read metadata */
 	READ_BUFFER(toi_header, struct toi_header*);
 	MOVE_FORWARD_BUFFER_POINTER(sizeof(struct toi_header));
+	resume_info.toi_pagedir1_size = toi_header->pagedir.size;
+	resume_info.toi_pagedir2_size = toi_header->pageset_2_size;
 	dump_toi_header(toi_header);
-	*pagedir1_size = toi_header->pagedir.size;
-	*pagedir2_size = toi_header->pageset_2_size;
 
 	MOVE_FORWARD_BUFFER_POINTER(4); /* FIXME: where does that come from? */
 
@@ -197,5 +181,88 @@ int read_metadata(unsigned long* pagedir1_size, unsigned long* pagedir2_size)
 	return 0;
 
 bail:
+	return -1;
+}
+
+// XXX Move the memcmp code to gpllib
+static int try_tuxonice()
+{
+	if (resume_info.file_size) {
+		memcpy(&resume_info.toi_file_header, resume_info.file, sizeof resume_info.toi_file_header);
+		/*
+		 * We only attempt to resume if the magic binary signature is found and
+		 * if an image is marked as present.
+		 */
+		if (memcmp(tuxonice_signature, resume_info.toi_file_header.sig,
+			   sizeof tuxonice_signature) ||
+		    !resume_info.toi_file_header.have_image)
+			return 0;
+		else
+			return 1;
+	} else if (resume_info.drive_info.disk) {
+		return 0; //toi_check(&resume_info.driveinfo, ptab, NULL);
+	} else
+		return 0;
+}
+
+/**
+ * swsusp_read_metadata - read configuration and bitmaps from disk
+ *
+ * Side effects:
+ *	mm is populated
+ *
+ * Return:
+ *	0 if everything went well, -1 otherwise.
+ **/
+static int swsusp_file_read_metadata()
+{
+	return 0;
+}
+
+static int try_swsusp()
+{
+	if (resume_info.file_size) {
+		memcpy(&resume_info.sw_header, resume_info.file, sizeof resume_info.sw_header);
+		return swsusp_check_signature(&resume_info.sw_header);
+	} else if (resume_info.drive_info.disk) {
+		return swsusp_check(&resume_info.drive_info, &resume_info.ptab, NULL);
+	} else
+		return 0;
+}
+
+/**
+ * read_metadata - parse image header
+ *
+ * Detect the resume method (swsusp vs TuxOnIce) and bootstrap
+ * the restore code.
+ **/
+int read_metadata(void)
+{
+	resume_info.method = NONE;
+
+	if (try_tuxonice()) {
+		if (resume_info.drive_info.disk) {
+			printf("TuxOnIce image on swap device found.\n");
+			resume_info.method = TOI_SWAP_PARTITION;
+			return 1;	/* TODO */
+		} else if (resume_info.file_size) {
+			printf("TuxOnIce file image found.\n");
+			resume_info.method = TOI_FILE;
+			// XXX TOI_SWAP_FILE?
+			/* Bootstrap the restore code */
+			return toi_file_read_metadata();
+		}
+	} else if (try_swsusp()) {
+		if (resume_info.drive_info.disk) {
+			printf("Swsusp image on swap device found.\n");
+			resume_info.method = SWSUSP_SWAP_PARTITION;
+		} else if (resume_info.file_size) {
+			printf("Swsusp file image found.\n");
+			resume_info.method = SWSUSP_SWAP_FILE;
+		}
+		return 0;
+	}
+
+	/* Invalid file or device */
 	return -1;
 }

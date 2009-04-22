@@ -60,7 +60,7 @@ int load_bitmap(void)
 		/* Load the bitmap itself */
 		bb->data = malloc(PAGE_SIZE);
 		memcpy(bb->data,
-		       toi_image_buffer + toi_image_buffer_posn,
+		       resume_info.image_buffer + resume_info.image_buffer_posn,
 		       PAGE_SIZE);
 		MOVE_FORWARD_BUFFER_POINTER(PAGE_SIZE);
 
