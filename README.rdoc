@@ -1,0 +1,37 @@
+= Syslinux fastboot
+
+Syslinux is a suite of bootloaders that can boot a variety of Operating Systems.
+See http://syslinux.zytor.com/wiki/index.php/The_Syslinux_Project for more information.
+
+This repository (http://github.com/pierre/syslinux-fastboot) is an out-of-tree series of patches implementing
+a resume mechanism for Linux in a COM32 module for Syslinux. See the description of the branch fast-boot below.
+
+= Branches description
+
+== master
+
+Nothing to see here (3.7x tree). Has one commit to have this README displayed on github.
+
+== fast-boot
+
+When booting a Linux based computer from a hibernate image, the process is broken down
+into three distinct phases:
+
+  1/ the bootloader loads the kernel image
+  2/ the loaded (first) kernel reads the hibernate image on disk and jumps into a saved kernel
+  3/ the second kernel, saved in the hibernate image, resets the saved state of the OS and resume its operations
+
+As an experiment, I wanted to see if it was possible to skip the second step and have the bootloader read and jump into the
+saved kernel on disk directly. This has been implemented in resume.c32, a Syslinux COM32 module which can read a TuxOnIce image
+(see http://github.com/pierre/tuxonice-fastboot) and jump into a saved kernel.
+
+Although the experiment has been successful, it is not clear whether this can be used in practice.
+
+First of all, reading the hibernate image is quite I/O expensive and can be done much faster using a real kernel vs using native I/O BIOS routines
+
+Second, some extra work may need to be done in 2/ above for the hardware to be in a safe state before attempting to resume (reset registers, ...).
+resume.c32 doesn't do any of that work and although it works in a stock Debian install in Qemu, it is not guaranteed to be stable using
+real hardware.
+
+To see it in action: http://www.youtube.com/watch?v=TF9nUVkHCrQ
+
